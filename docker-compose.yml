@@ -1,0 +1,12 @@
+services:
+  bible-bot:
+    build: .
+    container_name: bible-bot
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    env_file:
+      - .env
+    environment:
+      - TZ=Europe/Moscow
