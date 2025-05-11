@@ -11,6 +11,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.enums.parse_mode import ParseMode
 from aiogram.client.default import DefaultBotProperties
+from aiogram.fsm.context import FSMContext
 
 from config import settings
 from handlers import (

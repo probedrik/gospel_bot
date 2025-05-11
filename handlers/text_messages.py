@@ -24,6 +24,7 @@ from middleware.state import (
     get_translation_from_db
 )
 from config.settings import ENABLE_WORD_SEARCH
+from handlers.verse_reference import get_verse_by_reference
 
 # Инициализация логгера
 logger = logging.getLogger(__name__)
@@ -86,9 +87,10 @@ async def help_message(message: Message):
         "• /random - Получить случайный стих\n"
         "• /bookmarks - Показать ваши закладки\n\n"
         "Поиск отрывка:\n"
-        "Напишите ссылку в формате [Книга глава:стих], например:\n"
-        "Быт 1:1 - Первый стих Бытия\n"
-        "Ин 3:16 - 16-й стих 3-й главы Иоанна\n\n"
+        "Напишите ссылку в одном из форматов:\n"
+        "<b>Книга глава</b> — вся глава (например: <code>Ин 3</code>)\n"
+        "<b>Книга глава:стих</b> — один стих (например: <code>Ин 3:16</code>)\n"
+        "<b>Книга глава:стих-стих</b> — диапазон стихов (например: <code>Ин 3:16-18</code>)\n\n"
         "Для чтения выберите книгу и главу в меню бота."
     )
 
@@ -222,77 +224,23 @@ async def chapter_input(message: Message, state: FSMContext, db=None):
 async def search_verse(message: Message):
     """Обработчик поиска стихов"""
     await message.answer(
-        "Введите ссылку на стих в формате:\n"
-        "<b>Книга глава:стих</b>\n\n"
-        "Например: <code>Быт 1:1</code> или <code>Ин 3:16</code>"
+        "Введите ссылку на стих или отрывок в одном из форматов:\n"
+        "<b>Книга глава</b> — вся глава (например: <code>Ин 3</code>)\n"
+        "<b>Книга глава:стих</b> — один стих (например: <code>Ин 3:16</code>)\n"
+        "<b>Книга глава:стих-стих</b> — диапазон стихов (например: <code>Ин 3:16-18</code>)"
     )
 
 
 @router.message(
-    lambda msg: re.match(r'^[а-яА-Я0-9]+\s+\d+[:]\d+', msg.text) is not None
+    lambda msg: re.match(
+        r'^[а-яА-Я0-9]+\s+\d+([:]\d+(-\d+)?)?$', msg.text) is not None
 )
 async def verse_reference(message: Message, state: FSMContext):
-    """Обработчик ссылок на стихи в формате 'Книга глава:стих'"""
+    """Обработчик ссылок на стихи, диапазоны и главы: 'Книга глава', 'Книга глава:стих', 'Книга глава:стих-стих'"""
     try:
-        # Парсим ссылку
-        match = re.match(r'^([а-яА-Я0-9]+)\s+(\d+)[:](\d+)', message.text)
-        if not match:
-            return
-
-        book_code, chapter_str, verse_str = match.groups()
-        book_id = bible_data.get_book_id(book_code)
-
-        if not book_id:
-            await message.answer(f"Книга '{book_code}' не найдена.")
-            return
-
-        chapter = int(chapter_str)
-        verse = int(verse_str)
-
-        # Проверка допустимости главы
-        max_chapter = bible_data.max_chapters.get(book_id, 0)
-
-        logger.info(
-            f"Ссылка на стих: {book_code} (ID: {book_id}) {chapter}:{verse}, макс. глав: {max_chapter}")
-
-        if chapter < 1 or chapter > max_chapter:
-            book_name = bible_data.get_book_name(book_id)
-            await message.answer(
-                f"Книга «{book_name}» содержит {max_chapter} глав.\n"
-                f"Пожалуйста, введите номер главы от 1 до {max_chapter}."
-            )
-            return
-
-        # Получаем и отправляем текст стиха/главы
-        try:
-            translation = await get_current_translation(state)
-            text = await bible_api.get_formatted_chapter(
-                book_id, chapter, translation
-            )
-
-            # Проверка на ошибку при получении текста
-            if text.startswith("Ошибка:"):
-                await message.answer(f"Глава не найдена. Попробуйте другую главу.")
-                return
-
-            # Сохраняем текущую книгу и главу
-            await set_chosen_book(state, book_id)
-            await set_current_chapter(state, chapter)
-
-            # Отправляем текст с разбивкой
-            for part in split_text(text):
-                await message.answer(part)
-
-            # Добавляем клавиатуру навигации
-            has_previous = chapter > 1
-            has_next = chapter < max_chapter
-            await message.answer(
-                "Выберите действие:",
-                reply_markup=create_navigation_keyboard(has_previous, has_next)
-            )
-        except Exception as e:
-            logger.error(f"API error: {e}", exc_info=True)
-            await message.answer(f"Не удалось получить текст главы. Пожалуйста, попробуйте позже.")
+        text, _ = await get_verse_by_reference(state, message.text)
+        for part in split_text(text):
+            await message.answer(part)
     except Exception as e:
         logger.error(f"Ошибка в обработке ссылки на стих: {e}", exc_info=True)
         await message.answer("Не удалось найти указанный отрывок. Проверьте правильность ссылки.")
@@ -413,3 +361,34 @@ async def other_text(message: Message):
         "Я не понимаю эту команду. Воспользуйтесь кнопками меню или напишите /help для справки.",
         reply_markup=get_main_keyboard()
     )
+
+
+def parse_reference(reference: str):
+    """
+    Парсит ссылку на стих или диапазон стихов.
+    Поддерживает форматы:
+      - 'Ин 3:16' (один стих)
+      - 'Ин 3:16-18' (диапазон стихов)
+      - 'Ин 3' (вся глава)
+    Возвращает (название_книги, номер_главы, номер_стиха или (start, end) или None)
+    """
+    # Пример: Ин 3:16-18
+    match = re.match(
+        r'^([а-яА-Я0-9]+)\s+(\d+)(?::(\d+)(?:-(\d+))?)?$', reference)
+    if not match:
+        print(f"parse_reference: не совпало: {reference}")
+        return None, None, None
+    book = match.group(1)
+    chapter = int(match.group(2))
+    verse = match.group(3)
+    verse_end = match.group(4)
+    if verse and verse_end:
+        print(
+            f"parse_reference: {reference} -> {book}, {chapter}, ({verse}, {verse_end})")
+        return book, chapter, (int(verse), int(verse_end))
+    elif verse:
+        print(f"parse_reference: {reference} -> {book}, {chapter}, {verse}")
+        return book, chapter, int(verse)
+    else:
+        print(f"parse_reference: {reference} -> {book}, {chapter}, None")
+        return book, chapter, None

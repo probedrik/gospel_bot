@@ -1,3 +1,13 @@
+import re
+from aiogram.fsm.context import FSMContext
+from middleware.state import get_current_translation, set_chosen_book, set_current_chapter
+from utils.bible_data import bible_data
+from utils.api_client import bible_api
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 async def get_verse_by_reference(state: FSMContext, reference: str) -> tuple:
     """
     Обработка ссылки на стих или главу в формате "Книга Глава:Стих" или "Книга Глава"
@@ -12,7 +22,7 @@ async def get_verse_by_reference(state: FSMContext, reference: str) -> tuple:
             return "Неверный формат ссылки. Используйте формат 'Книга Глава:Стих' или 'Книга Глава'", False
 
         # Получить ID книги
-        book_id = bible_data.get_book_id_by_name(book_name)
+        book_id = bible_data.get_book_id(book_name)
         if not book_id:
             return f"Книга '{book_name}' не найдена.", False
 
@@ -26,23 +36,21 @@ async def get_verse_by_reference(state: FSMContext, reference: str) -> tuple:
         if chapter < 1 or chapter > max_chapter:
             return f"Книга '{book_name}' содержит {max_chapter} глав. Укажите главу от 1 до {max_chapter}.", False
 
-        # Получение текста: стих или вся глава
+        # Получение текста: стих, диапазон или вся глава
         if verse:
-            # Сохраняем выбранную книгу и главу в состоянии
             await set_chosen_book(state, book_id)
             await set_current_chapter(state, chapter)
-
-            result = await bible_api.get_verse(book_id, chapter, verse, translation)
-            # Предполагаем, что у стиха есть продолжение (глава)
+            if isinstance(verse, tuple):
+                result = await bible_api.get_verses(book_id, chapter, verse, translation)
+            elif isinstance(verse, int):
+                result = await bible_api.get_verses(book_id, chapter, verse, translation)
+            else:
+                result = await bible_api.get_formatted_chapter(book_id, chapter, translation)
             has_continuation = True
         else:
-            # Сохраняем выбранную книгу и главу в состоянии
             await set_chosen_book(state, book_id)
             await set_current_chapter(state, chapter)
-
             result = await bible_api.get_formatted_chapter(book_id, chapter, translation)
-
-            # Проверка наличия следующей и предыдущей главы
             has_previous = chapter > 1
             has_next = chapter < max_chapter
             has_continuation = has_previous or has_next
@@ -55,3 +63,29 @@ async def get_verse_by_reference(state: FSMContext, reference: str) -> tuple:
         logger.error(
             f"Ошибка при обработке ссылки на стих: {e}", exc_info=True)
         return "Произошла ошибка при обработке ссылки. Пожалуйста, проверьте формат и попробуйте снова.", False
+
+
+def parse_reference(reference: str):
+    """
+    Парсит ссылку на стих или диапазон стихов.
+    Поддерживает форматы:
+      - 'Ин 3:16' (один стих)
+      - 'Ин 3:16-18' (диапазон стихов)
+      - 'Ин 3' (вся глава)
+    Возвращает (название_книги, номер_главы, номер_стиха или (start, end) или None)
+    """
+    # Пример: Ин 3:16-18
+    match = re.match(
+        r'^([а-яА-Я0-9]+)\s+(\d+)(?::(\d+)(?:-(\d+))?)?$', reference)
+    if not match:
+        return None, None, None
+    book = match.group(1)
+    chapter = int(match.group(2))
+    verse = match.group(3)
+    verse_end = match.group(4)
+    if verse and verse_end:
+        return book, chapter, (int(verse), int(verse_end))
+    elif verse:
+        return book, chapter, int(verse)
+    else:
+        return book, chapter, None

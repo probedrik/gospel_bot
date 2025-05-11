@@ -163,6 +163,29 @@ class BibleAPIClient:
             logger.error(f"Ошибка при поиске текста: {e}")
             return []
 
+    async def get_verses(self, book: int, chapter: int, verse_range, translation: str = "rst") -> str:
+        """
+        Получает текст одного стиха или диапазона стихов из главы.
+        verse_range: int (один стих) или (start, end) для диапазона
+        """
+        try:
+            data = await self.get_chapter(book, chapter, translation)
+            verses = [v for k, v in data.items() if k != "info"]
+            if isinstance(verse_range, tuple):
+                start, end = verse_range
+                selected = verses[start-1:end]
+                verses_text = ' '.join(selected)
+                ref = f"{data['info']['book']} {chapter}:{start}-{end}"
+            else:
+                selected = verses[verse_range-1:verse_range]
+                verses_text = ' '.join(selected)
+                ref = f"{data['info']['book']} {chapter}:{verse_range}"
+            testament = "Ветхий завет" if book < 40 else "Новый завет"
+            return f"{testament}. {ref}:\n{verses_text}"
+        except Exception as e:
+            logger.error(f"Ошибка при получении диапазона стихов: {e}")
+            return f"Ошибка: {e}"
+
 
 # Создаем глобальный экземпляр клиента для использования в других модулях
 bible_api = BibleAPIClient()
