@@ -233,4 +233,6 @@
 
 ### Добавление новых API-методов
 1. Добавить метод в класс `BibleAPIClient` в `utils/api_client.py`
-2. Реализовать кэширование результатов при необходимости 
+2. Реализовать кэширование результатов при необходимости
+
+![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/probedrik/gospel_bot?utm_source=oss&utm_medium=github&utm_campaign=probedrik%2Fgospel_bot&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)
