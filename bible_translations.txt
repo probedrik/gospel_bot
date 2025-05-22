@@ -1,0 +1,76 @@
+ru: Синодальный перевод
+ru: Синода́льный перево́д
+ru: Синодальный перевод (МП)
+ru: Синодальный перевод (СВ)
+ru: Библия Гёце (SK)
+ru: Новый русский перевод
+ru: Перевод Десницкого
+ru: Под редакцией Кулаковых
+ru: Библейской Лиги ERV
+ru: Cовременный перевод WBTC
+ru: Перевод Еп. Кассиана
+ru: Слово Жизни
+ru: Открытый перевод
+ru: Еврейский Новый Завет
+ru: Русского Библейского Центра
+ru: В переводе Лутковского
+ru: Макария Глухарева ВЗ
+ru: Перевод Юнгерова ВЗ
+ru: Новый Завет РБО 1824
+ru: Аверинцев: отдельные книги
+ru: Елизаветинская Библия
+ru: Елизаветинская на русском
+by: Пераклад Антонія Бокуна
+by: Пераклад Васіля Сёмухі
+by: Пераклад Чарняўскага 2017
+by: Пераклад Яна Станкевіча
+by: Пераклад Л. Дзекуць-Малея
+by: Пераклад праваслаўнай царквы
+by: Пераклад Рыма-Каталіцкага Касцёла
+by: Пераклад Анатоля Клышкi
+by: Пераклад Сабілы і Малахава
+by: Пераклад Міхася Міцкевіча
+by: Пераклад П. Татарыновіча
+by: Пераклад В. Гадлеўскага
+by: Пераклад Яна Пятроўскага
+by: Пераклад Міхаіла Астапчыка
+by: Пераклад Аляксандара Надсана
+ua: Переклад Огієнка
+ua: Переклад Хоменка
+ua: Переклад Куліша та Пулюя
+ua: Українська Біблія. Турконяк
+ua: Сучасний переклад
+en: King James Bible
+en: New American Standard Bible
+en: English Standard Version
+en: New International Version
+en: New King James Version
+en: New Living Translation
+en: Darby Bible Translation
+de: Luther Bibel 1984
+de: Luther Bibel 1545
+de: Elberfelder Bibel 2006
+de: Schlachter Bibel 1951
+gr: Textus Receptus 1550 Stephanus
+gr: Textus Receptus 1598 Beza
+gr: Textus Receptus 1624 Elzevir
+gr: Textus Receptus 1894 Scrivener
+gr: Tregelles 1857−1879
+gr: Tischendorf 8th — 1872
+ru: Подстрочник Винокурова
+ru: Подстрочник: TR + SYN
+gr: Westcott and Hort 1881
+gr: Nestle Greek NT 1904
+gr: GNT Orthodox Church 1904
+gr: Byzantine Majority Text 2005
+gr: GNT Family 35
+gr: SBL Greek New Testament 2010
+gr: Синайский кодекс — 4 век
+gr: Ватиканский кодекс — 4 век
+gr: Александрийский кодекс — 5 век
+gr: Ефремов кодекс — 5 век
+gr: Кодекс Безы — 5 век
+gr: Кодекс Борджиа — 5 век
+gr: Вашингтонский кодекс — 5 век
+lat: Клементиновская Вульгата
+lat: Новая Вульгата 

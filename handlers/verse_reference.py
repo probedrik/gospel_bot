@@ -72,17 +72,20 @@ def parse_reference(reference: str):
       - 'Ин 3:16' (один стих)
       - 'Ин 3:16-18' (диапазон стихов)
       - 'Ин 3' (вся глава)
-    Возвращает (название_книги, номер_главы, номер_стиха или (start, end) или None)
+      - 'от иоанна 3:16', 'иоанн 3:16' и т.д.
+    Возвращает (нормализованное_название_книги, номер_главы, номер_стиха или (start, end) или None)
     """
-    # Пример: Ин 3:16-18
+    # Пример: Ин 3:16-18 или от иоанна 3:16
     match = re.match(
-        r'^([а-яА-Я0-9]+)\s+(\d+)(?::(\d+)(?:-(\d+))?)?$', reference)
+        r'^([а-яА-ЯёЁ0-9\s]+)\s+(\d+)(?::(\d+)(?:-(\d+))?)?$', reference.strip(), re.IGNORECASE)
     if not match:
         return None, None, None
-    book = match.group(1)
+    book_raw = match.group(1).strip()
     chapter = int(match.group(2))
     verse = match.group(3)
     verse_end = match.group(4)
+    # Нормализация названия книги
+    book = bible_data.normalize_book_name(book_raw)
     if verse and verse_end:
         return book, chapter, (int(verse), int(verse_end))
     elif verse:

@@ -4,14 +4,17 @@
 import logging
 from datetime import datetime
 from aiogram import Router
-from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.filters import Command, Filter
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiogram.fsm.context import FSMContext
 
 from keyboards.main import get_main_keyboard, create_book_keyboard
 from utils.api_client import bible_api
 from utils.bible_data import bible_data
 from middleware.state import set_page, get_current_translation, get_chosen_book, get_current_chapter, get_bookmarks
+from database.db_manager import db_manager
+from aiogram import Router, F
+from config.ai_settings import AI_OWNER_ID, AI_DAILY_LIMIT
 
 # Инициализация логгера
 logger = logging.getLogger(__name__)
@@ -58,15 +61,24 @@ async def cmd_help(message: Message):
         "• /help - Показать эту помощь\n"
         "• /books - Показать список книг\n"
         "• /random - Получить случайный стих\n"
-        "• /bookmarks - Показать ваши закладки\n\n"
+        "• /bookmarks - Показать ваши закладки\n"
+        "• /clean_on - Включить автоудаление сообщений\n"
+        "• /clean_off - Отключить автоудаление сообщений\n"
+        "\n"
         "Поиск отрывка:\n"
         "Напишите ссылку в формате [Книга глава:стих], например:\n"
         "Быт 1:1 - Первый стих Бытия\n"
-        "Ин 3:16 - 16-й стих 3-й главы Иоанна\n\n"
-        "Для чтения выберите книгу и главу в меню бота."
+        "Ин 3:16 - 16-й стих 3-й главы Иоанна\n"
+        "\n"
+        "Для чтения выберите книгу и главу в меню бота.\n"
+        "\n"
+        "<b>Возможности:</b>\n"
+        "• Быстрый выбор книги и главы\n"
+        "• Толкования проф. Лопухина и ИИ-разборы (лимит 5 в сутки, кроме владельца)\n"
+        "• Кэширование популярных ИИ-ответов\n"
+        "• Включение/отключение автоудаления сообщений через /clean_on и /clean_off\n"
     )
-
-    await message.answer(help_text)
+    await message.answer(help_text, parse_mode="HTML")
 
 
 @router.message(Command("books"))
@@ -624,3 +636,150 @@ async def reset_db_command(message: Message, state: FSMContext):
         logger.error(
             f"Критическая ошибка при пересоздании БД: {e}", exc_info=True)
         await message.answer(f"❌ Критическая ошибка: {str(e)[:100]}")
+
+
+@router.message(F.text.regexp(r"^/ai_limit( \d+)?$"))
+async def ai_limit_command(message: Message):
+    """Показать лимит ИИ-запросов для пользователя (только для владельца)"""
+    if message.from_user.id != AI_OWNER_ID:
+        await message.answer("Доступ запрещён.")
+        return
+    parts = message.text.strip().split()
+    if len(parts) == 2:
+        user_id = int(parts[1])
+    else:
+        user_id = message.from_user.id
+    today = datetime.date.today().isoformat()
+    count = await db_manager.get_ai_limit(user_id, today)
+    await message.answer(f"Пользователь {user_id} сделал {count}/{AI_DAILY_LIMIT} ИИ-запросов сегодня.")
+
+
+@router.message(F.text.regexp(r"^/ai_limit_reset( \d+)?$"))
+async def ai_limit_reset_command(message: Message):
+    """Сбросить лимит ИИ-запросов для пользователя (только для владельца)"""
+    if message.from_user.id != AI_OWNER_ID:
+        await message.answer("Доступ запрещён.")
+        return
+    parts = message.text.strip().split()
+    if len(parts) == 2:
+        user_id = int(parts[1])
+    else:
+        user_id = message.from_user.id
+    today = datetime.date.today().isoformat()
+    await db_manager.reset_ai_limit(user_id, today)
+    await message.answer(f"Лимит ИИ-запросов для пользователя {user_id} сброшен на сегодня.")
+
+
+@router.message(F.text == "/admin")
+async def admin_panel(message: Message):
+    if message.from_user.id != AI_OWNER_ID:
+        await message.answer("Доступ запрещён.")
+        return
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(
+                text="Статистика ИИ-запросов", callback_data="admin_ai_stats")],
+            [InlineKeyboardButton(
+                text="Топ пользователей по ИИ", callback_data="admin_ai_top")],
+            [InlineKeyboardButton(text="Список безлимитных",
+                                  callback_data="admin_ai_unlimited")],
+            [InlineKeyboardButton(
+                text="Сбросить лимит пользователя", callback_data="admin_ai_reset")],
+            [InlineKeyboardButton(
+                text="Обновить", callback_data="admin_panel_refresh")],
+        ]
+    )
+    await message.answer("<b>Админ-панель</b>\nВыберите действие:", reply_markup=kb, parse_mode="HTML")
+
+
+@router.callback_query(F.data == "admin_panel_refresh")
+async def admin_panel_refresh(callback: CallbackQuery):
+    if callback.from_user.id != AI_OWNER_ID:
+        await callback.answer("Доступ запрещён.", show_alert=True)
+        return
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(
+                text="Статистика ИИ-запросов", callback_data="admin_ai_stats")],
+            [InlineKeyboardButton(
+                text="Топ пользователей по ИИ", callback_data="admin_ai_top")],
+            [InlineKeyboardButton(text="Список безлимитных",
+                                  callback_data="admin_ai_unlimited")],
+            [InlineKeyboardButton(
+                text="Сбросить лимит пользователя", callback_data="admin_ai_reset")],
+            [InlineKeyboardButton(
+                text="Обновить", callback_data="admin_panel_refresh")],
+        ]
+    )
+    await callback.message.edit_text("<b>Админ-панель</b>\nВыберите действие:", reply_markup=kb, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_ai_stats")
+async def admin_ai_stats(callback: CallbackQuery):
+    from database.db_manager import db_manager
+    import datetime
+    today = datetime.date.today().isoformat()
+    # Получить топ-10 пользователей по количеству ИИ-запросов за сегодня
+    stats = await db_manager.get_ai_stats(today, limit=10)
+    text = "<b>Топ-10 пользователей по ИИ-запросам сегодня:</b>\n"
+    for user_id, count in stats:
+        text += f"<code>{user_id}</code>: {count}\n"
+    await callback.message.edit_text(text, reply_markup=callback.message.reply_markup, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_ai_top")
+async def admin_ai_top(callback: CallbackQuery):
+    from database.db_manager import db_manager
+    # Получить топ-10 пользователей за всё время
+    stats = await db_manager.get_ai_stats_alltime(limit=10)
+    text = "<b>Топ-10 пользователей по ИИ-запросам (всё время):</b>\n"
+    for user_id, count in stats:
+        text += f"<code>{user_id}</code>: {count}\n"
+    await callback.message.edit_text(text, reply_markup=callback.message.reply_markup, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_ai_unlimited")
+async def admin_ai_unlimited(callback: CallbackQuery):
+    from config.ai_settings import AI_UNLIMITED_USERS
+    text = "<b>Пользователи с безлимитным доступом:</b>\n"
+    for uid in AI_UNLIMITED_USERS:
+        text += f"<code>{uid}</code>\n"
+    text += "\nДля изменения списка — отредактируйте config/ai_settings.py."
+    await callback.message.edit_text(text, reply_markup=callback.message.reply_markup, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_ai_reset")
+async def admin_ai_reset(callback: CallbackQuery):
+    await callback.message.edit_text(
+        "Введите user_id для сброса лимита (отправьте числом в чат):",
+        reply_markup=callback.message.reply_markup
+    )
+    # Сохраняем состояние ожидания user_id (можно реализовать через FSM или временно через глобальный dict)
+    global _admin_wait_reset
+    _admin_wait_reset = callback.from_user.id
+    await callback.answer()
+
+
+class AdminWaitResetFilter(Filter):
+    async def __call__(self, message: Message) -> bool:
+        return '_admin_wait_reset' in globals() and message.from_user.id == _admin_wait_reset
+
+
+@router.message(AdminWaitResetFilter())
+async def admin_ai_reset_userid(message: Message):
+    global _admin_wait_reset
+    try:
+        user_id = int(message.text.strip())
+    except Exception:
+        await message.answer("Некорректный user_id. Введите число.")
+        return
+    import datetime
+    today = datetime.date.today().isoformat()
+    from database.db_manager import db_manager
+    await db_manager.reset_ai_limit(user_id, today)
+    await message.answer(f"Лимит ИИ-запросов для пользователя {user_id} сброшен на сегодня.")
+    del _admin_wait_reset

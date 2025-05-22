@@ -7,6 +7,7 @@ import time
 from typing import Dict, Any, Optional
 
 from config.settings import API_URL, API_TIMEOUT, CACHE_TTL
+from config.ai_settings import ENABLE_GPT_EXPLAIN, OPENROUTER_API_KEY, OPENROUTER_MODEL, LLM_ROLE
 
 # Инициализация логгера
 logger = logging.getLogger(__name__)
@@ -63,6 +64,14 @@ class BibleAPIClient:
         Returns:
             Словарь с текстом главы и информацией о ней
         """
+        # Приведение типов для book и chapter
+        try:
+            book = int(book)
+            chapter = int(chapter)
+        except Exception as e:
+            logger.error(f"Некорректные типы для book или chapter: {e}")
+            raise ValueError("book и chapter должны быть целыми числами")
+
         cache_key = f"chapter_{book}_{chapter}_{translation}"
         cached_data = self._get_from_cache(cache_key)
         if cached_data:
@@ -96,10 +105,20 @@ class BibleAPIClient:
         Returns:
             Отформатированный текст главы
         """
+        # Приведение типов для book и chapter
+        try:
+            book = int(book)
+            chapter = int(chapter)
+        except Exception as e:
+            logger.error(f"Некорректные типы для book или chapter: {e}")
+            return f"Ошибка: некорректные параметры главы (book/chapter)"
         try:
             data = await self.get_chapter(book, chapter, translation)
-
-            # Формируем текст главы
+            # Проверка наличия ключа 'info' и нужных данных
+            if not data or 'info' not in data or 'book' not in data['info']:
+                logger.error(
+                    f"Некорректный ответ от API (нет 'info' или 'book'): {data}")
+                return "Ошибка: не удалось получить текст главы. Попробуйте позже."
             verses = [v for k, v in data.items() if k != "info"]
             testament = "Ветхий завет" if book < 40 else "Новый завет"
             return f"{testament}. {data['info']['book']} {chapter}:\n{' '.join(verses)}"
@@ -168,6 +187,14 @@ class BibleAPIClient:
         Получает текст одного стиха или диапазона стихов из главы.
         verse_range: int (один стих) или (start, end) для диапазона
         """
+        # Приведение типов для book и chapter
+        try:
+            book = int(book)
+            chapter = int(chapter)
+        except Exception as e:
+            logger.error(f"Некорректные типы для book или chapter: {e}")
+            return f"Ошибка: некорректные параметры главы (book/chapter)"
+
         try:
             data = await self.get_chapter(book, chapter, translation)
             verses = [v for k, v in data.items() if k != "info"]
@@ -185,6 +212,44 @@ class BibleAPIClient:
         except Exception as e:
             logger.error(f"Ошибка при получении диапазона стихов: {e}")
             return f"Ошибка: {e}"
+
+
+# Кэш для ответов ИИ: ключ -> ответ
+_gpt_explain_cache = {}
+
+
+async def ask_gpt_explain(text: str) -> str:
+    """
+    Отправляет запрос к OpenRouter (OpenAI совместимый API) для объяснения стиха или главы.
+    Кэширует ответы для одинаковых запросов.
+    """
+    cache_key = text.strip().lower()
+    if cache_key in _gpt_explain_cache:
+        return _gpt_explain_cache[cache_key]
+
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "model": OPENROUTER_MODEL,
+        "messages": [
+            {"role": "system", "content": LLM_ROLE},
+            {"role": "user", "content": text}
+        ],
+        "max_tokens": 2048,
+        "temperature": 0.7
+    }
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, headers=headers, json=payload) as resp:
+            data = await resp.json()
+            try:
+                result = data["choices"][0]["message"]["content"].strip()
+                _gpt_explain_cache[cache_key] = result
+                return result
+            except Exception:
+                return "Извините, не удалось получить объяснение от ИИ. Попробуйте позже."
 
 
 # Создаем глобальный экземпляр клиента для использования в других модулях

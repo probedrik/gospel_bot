@@ -111,29 +111,18 @@ class DatabaseMiddleware(BaseMiddleware):
             # Экстренное добавление объекта
             data["db"] = db_manager
 
+        # ГАРАНТИЯРОВАННО добавляем пользователя в БД для любого апдейта с user_id
         if user_id:
-            # Для конкретных пользователей логируем подробнее
-            logger.info(
-                f"Объект db_manager добавлен в обработчик для события {event_type} от пользователя {user_id}")
-
-            # Проверяем наличие пользователя в БД
             try:
-                user = await db_manager.get_user(user_id)
-                if user:
-                    logger.debug(f"Пользователь {user_id} найден в БД")
-                else:
-                    logger.info(
-                        f"Пользователь {user_id} не найден в БД, будет добавлен при необходимости")
-                    # Добавляем пользователя, чтобы гарантировать его наличие
-                    username = None
-                    first_name = None
-                    if hasattr(event, 'from_user'):
-                        username = event.from_user.username
-                        first_name = event.from_user.first_name
-                    await db_manager.add_user(user_id, username or "", first_name or "")
+                username = None
+                first_name = None
+                if hasattr(event, 'from_user'):
+                    username = event.from_user.username
+                    first_name = event.from_user.first_name
+                await db_manager.add_user(user_id, username or "", first_name or "")
             except Exception as e:
                 logger.error(
-                    f"Ошибка при проверке пользователя {user_id} в БД: {e}", exc_info=True)
+                    f"Ошибка при добавлении пользователя {user_id} в БД: {e}", exc_info=True)
         else:
             logger.debug(
                 f"Объект db_manager добавлен в обработчик для события {event_type}")

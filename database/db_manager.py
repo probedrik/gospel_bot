@@ -86,9 +86,20 @@ class DatabaseManager:
             )
             ''')
 
+            # Таблица лимитов ИИ
+            logger.info("Создание/проверка таблицы ai_limits")
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS ai_limits (
+                user_id INTEGER,
+                date TEXT,
+                count INTEGER,
+                PRIMARY KEY (user_id, date)
+            )
+            ''')
+
             # Проверяем, созданы ли таблицы
             cursor.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND (name='users' OR name='bookmarks')")
+                "SELECT name FROM sqlite_master WHERE type='table' AND (name='users' OR name='bookmarks' OR name='ai_limits')")
             tables = cursor.fetchall()
             logger.info(f"Проверка созданных таблиц: {tables}")
 
@@ -106,13 +117,14 @@ class DatabaseManager:
 
             # Проверим, что таблицы действительно созданы
             cursor.execute(
-                "SELECT COUNT(name) FROM sqlite_master WHERE type='table' AND (name='users' OR name='bookmarks')")
+                "SELECT COUNT(name) FROM sqlite_master WHERE type='table' AND (name='users' OR name='bookmarks' OR name='ai_limits')")
             table_count = cursor.fetchone()[0]
-            if table_count == 2:
-                logger.info("Обе таблицы (users и bookmarks) успешно созданы")
+            if table_count == 3:
+                logger.info(
+                    "Все таблицы (users, bookmarks и ai_limits) успешно созданы")
             else:
                 logger.warning(
-                    f"Не все таблицы созданы. Найдено таблиц: {table_count}/2")
+                    f"Не все таблицы созданы. Найдено таблиц: {table_count}/3")
 
         except Exception as e:
             logger.error(
@@ -710,10 +722,19 @@ class DatabaseManager:
                 FOREIGN KEY (user_id) REFERENCES users (user_id)
             )''')
 
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS ai_limits (
+                user_id INTEGER,
+                date TEXT,
+                count INTEGER,
+                PRIMARY KEY (user_id, date)
+            )''')
+
             conn.commit()
             conn.close()
 
-            result["actions"].append("Созданы новые таблицы users и bookmarks")
+            result["actions"].append(
+                "Созданы новые таблицы users, bookmarks и ai_limits")
             result["success"] = True
             return result
 
@@ -721,6 +742,80 @@ class DatabaseManager:
             result["errors"].append(f"Ошибка восстановления БД: {e}")
             return result
 
+    async def get_ai_limit(self, user_id: int, date: str) -> int:
+        """Возвращает количество ИИ-запросов пользователя за дату (строка YYYY-MM-DD)"""
+        def _execute():
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT count FROM ai_limits WHERE user_id=? AND date=?", (user_id, date))
+            row = cursor.fetchone()
+            conn.close()
+            return row[0] if row else 0
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, _execute)
 
-# Создаем глобальный экземпляр менеджера БД для использования в других модулях
+    async def increment_ai_limit(self, user_id: int, date: str) -> int:
+        """Увеличивает счетчик ИИ-запросов пользователя за дату, возвращает новое значение"""
+        def _execute():
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT count FROM ai_limits WHERE user_id=? AND date=?", (user_id, date))
+            row = cursor.fetchone()
+            if row:
+                new_count = row[0] + 1
+                cursor.execute(
+                    "UPDATE ai_limits SET count=? WHERE user_id=? AND date=?", (new_count, user_id, date))
+            else:
+                new_count = 1
+                cursor.execute(
+                    "INSERT INTO ai_limits (user_id, date, count) VALUES (?, ?, ?)", (user_id, date, 1))
+            conn.commit()
+            conn.close()
+            return new_count
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, _execute)
+
+    async def reset_ai_limit(self, user_id: int, date: str) -> None:
+        """Сбросить лимит ИИ-запросов пользователя за дату (обнуляет счетчик)"""
+        def _execute():
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            cursor.execute(
+                "DELETE FROM ai_limits WHERE user_id=? AND date=?", (user_id, date))
+            conn.commit()
+            conn.close()
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, _execute)
+
+    async def get_ai_stats(self, date: str, limit: int = 10) -> list:
+        """Топ пользователей по ИИ-запросам за дату (user_id, count)"""
+        def _execute():
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT user_id, count FROM ai_limits WHERE date=? ORDER BY count DESC LIMIT ?", (date, limit))
+            rows = cursor.fetchall()
+            conn.close()
+            return rows
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, _execute)
+
+    async def get_ai_stats_alltime(self, limit: int = 10) -> list:
+        """Топ пользователей по ИИ-запросам за всё время (user_id, total_count)"""
+        def _execute():
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT user_id, SUM(count) as total FROM ai_limits GROUP BY user_id ORDER BY total DESC LIMIT ?", (limit,))
+            rows = cursor.fetchall()
+            conn.close()
+            return rows
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, _execute)
+
+# Глобальный экземпляр менеджера БД
+
+
 db_manager = DatabaseManager()

@@ -279,12 +279,17 @@ async def bookmark_selected(callback: CallbackQuery, state: FSMContext, db=None)
         for part in split_text(text):
             await callback.message.answer(part)
 
+        # СНАЧАЛА добавляем кнопки Толкования и ИИ
+        from handlers.callbacks import get_chapter_extras_keyboard
+        extras_kb = get_chapter_extras_keyboard(book_id, chapter)
+        if extras_kb:
+            await callback.message.answer(reply_markup=extras_kb)
+        # Затем навигация
         await callback.message.answer(
             f"Вы открыли закладку: {book_name} {chapter}",
             reply_markup=create_navigation_keyboard(
                 has_previous, has_next, is_bookmarked)
         )
-
         await callback.answer()
     except ValueError as e:
         logger.error(f"Ошибка при разборе callback_data: {e}", exc_info=True)

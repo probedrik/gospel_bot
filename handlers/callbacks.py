@@ -1,5 +1,5 @@
 """
-Обработчики колбэков для инлайн-кнопок.
+Обработчики колбэков для инлайн-кнопками.
 """
 import logging
 from aiogram import Router, F
@@ -22,6 +22,7 @@ from middleware.state import (
     get_page, set_page,
     get_bookmarks, add_bookmark, clear_bookmarks, remove_bookmark
 )
+from handlers.text_messages import delete_related_messages
 
 # Инициализация логгера
 logger = logging.getLogger(__name__)
@@ -68,7 +69,7 @@ async def page_navigation(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "next_chapter")
 async def next_chapter(callback: CallbackQuery, state: FSMContext, db=None):
-    """Обработчик кнопки 'Следующая глава'"""
+    await delete_related_messages(callback, state)
     try:
         book_id = await get_chosen_book(state)
         if not book_id:
@@ -116,10 +117,13 @@ async def next_chapter(callback: CallbackQuery, state: FSMContext, db=None):
             logger.info(
                 f"Статус закладки для главы {book_id}:{next_chapter_num}: {is_bookmarked}")
 
-            # Добавляем клавиатуру навигации
+            # СНАЧАЛА добавляем кнопки Толкования и ИИ
+            extras_kb = get_chapter_extras_keyboard(book_id, next_chapter_num)
+            if extras_kb:
+                await callback.message.answer("Дополнительные действия:", reply_markup=extras_kb)
+            # Затем навигация
             has_previous = next_chapter_num > 1
             has_next = next_chapter_num < max_chapter
-
             await callback.message.answer(
                 "Выберите действие:",
                 reply_markup=create_navigation_keyboard(
@@ -136,7 +140,7 @@ async def next_chapter(callback: CallbackQuery, state: FSMContext, db=None):
 
 @router.callback_query(F.data == "prev_chapter")
 async def prev_chapter(callback: CallbackQuery, state: FSMContext, db=None):
-    """Обработчик кнопки 'Предыдущая глава'"""
+    await delete_related_messages(callback, state)
     try:
         book_id = await get_chosen_book(state)
         if not book_id:
@@ -184,6 +188,11 @@ async def prev_chapter(callback: CallbackQuery, state: FSMContext, db=None):
             max_chapter = bible_data.max_chapters.get(book_id, 0)
             has_next = prev_chapter_num < max_chapter
 
+            # СНАЧАЛА добавляем кнопки Толкования и ИИ
+            extras_kb = get_chapter_extras_keyboard(book_id, prev_chapter_num)
+            if extras_kb:
+                await callback.message.answer("Дополнительные действия:", reply_markup=extras_kb)
+            # Затем навигация
             await callback.message.answer(
                 "Выберите действие:",
                 reply_markup=create_navigation_keyboard(
@@ -300,6 +309,61 @@ async def back_to_reading(callback: CallbackQuery, state: FSMContext):
         reply_markup=create_navigation_keyboard(has_previous)
     )
     await callback.answer()
+
+
+def get_chapter_extras_keyboard(book_id, chapter):
+    """Возвращает клавиатуру с кнопками Толкования Лопухина и ИИ-объяснения для главы."""
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    from config.ai_settings import ENABLE_GPT_EXPLAIN
+    # Получаем английское сокращение книги
+    en_book = None
+    en_to_ru = {
+        "Gen": "Быт", "Exod": "Исх", "Lev": "Лев", "Num": "Чис", "Deut": "Втор", "Josh": "Нав", "Judg": "Суд", "Ruth": "Руф",
+        "1Sam": "1Цар", "2Sam": "2Цар", "1Kgs": "3Цар", "2Kgs": "4Цар", "1Chr": "1Пар", "2Chr": "2Пар", "Ezra": "Езд", "Neh": "Неем",
+        "Esth": "Есф", "Job": "Иов", "Ps": "Пс", "Prov": "Прит", "Eccl": "Еккл", "Song": "Песн", "Isa": "Ис", "Jer": "Иер",
+        "Lam": "Плач", "Ezek": "Иез", "Dan": "Дан", "Hos": "Ос", "Joel": "Иоил", "Amos": "Ам", "Obad": "Авд", "Jonah": "Ион",
+        "Mic": "Мих", "Nah": "Наум", "Hab": "Авв", "Zeph": "Соф", "Hag": "Агг", "Zech": "Зах", "Mal": "Мал",
+        "Matt": "Мф", "Mark": "Мк", "Luke": "Лк", "John": "Ин", "Acts": "Деян", "Jas": "Иак", "1Pet": "1Пет", "2Pet": "2Пет",
+        "1John": "1Ин", "2John": "2Ин", "3John": "3Ин", "Jude": "Иуд", "Rom": "Рим", "1Cor": "1Кор", "2Cor": "2Кор",
+        "Gal": "Гал", "Eph": "Еф", "Phil": "Флп", "Col": "Кол", "1Thess": "1Фес", "2Thess": "2Фес", "1Tim": "1Тим",
+        "2Tim": "2Тим", "Titus": "Тит", "Phlm": "Флм", "Heb": "Евр", "Rev": "Откр"
+    }
+    book_abbr = None
+    for abbr, b_id in bible_data.book_abbr_dict.items():
+        if b_id == book_id:
+            book_abbr = abbr
+            break
+    for en, ru in en_to_ru.items():
+        if ru == book_abbr:
+            en_book = en
+            break
+    buttons = []
+    if en_book:
+        buttons.append([
+            InlineKeyboardButton(
+                text="Толкование проф. Лопухина",
+                callback_data=f"open_commentary_{en_book}_{chapter}_0"
+            )
+        ])
+        if ENABLE_GPT_EXPLAIN:
+            buttons.append([
+                InlineKeyboardButton(
+                    text="🤖 Разбор от ИИ",
+                    callback_data=f"gpt_explain_{en_book}_{chapter}_0"
+                )
+            ])
+    else:
+        # Если не удалось определить en_book, все равно показываем ИИ
+        if ENABLE_GPT_EXPLAIN:
+            buttons.append([
+                InlineKeyboardButton(
+                    text="🤖 Разбор от ИИ",
+                    callback_data=f"gpt_explain_UNKNOWN_{chapter}_0"
+                )
+            ])
+    if buttons:
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
+    return None
 
 
 async def is_chapter_bookmarked(user_id: int, book_id: int, chapter: int, db=None) -> bool:

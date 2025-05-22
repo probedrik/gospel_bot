@@ -41,3 +41,13 @@ ENABLE_WORD_SEARCH = False  # Включить/отключить функцию
 # Константы для логирования
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# Глобальный параметр по умолчанию для удаления связанных сообщений
+ENABLE_DELETE_RELATED_MESSAGES_DEFAULT = False
+
+# --- НАСТРОЙКИ ФОРМАТИРОВАНИЯ ---
+MARKDOWN_ENABLED = True  # Включить форматирование MarkdownV2 для толкований и ИИ
+MARKDOWN_MODE = "MarkdownV2"  # Режим: Markdown, MarkdownV2, HTML
+MARKDOWN_BOLD_TITLE = True  # Делать заголовки жирными
+MARKDOWN_QUOTE = True  # Выводить текст как цитату (>)
+MARKDOWN_ESCAPE = True  # Экранировать спецсимволы для MarkdownV2
