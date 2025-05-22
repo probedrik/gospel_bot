@@ -89,3 +89,39 @@
 ---
 
 **Проект поддерживает современные практики Python и aiogram 3.x.**
+
+## Docker (расширенные команды)
+1. Сборка образа:
+   ```
+   docker build -t bible-bot .
+   ```
+2. Запуск контейнера:
+   ```
+   docker run -d --name bible-bot --restart unless-stopped -v $(pwd)/data:/app/data -v $(pwd)/logs:/app/logs --env-file .env bible-bot
+   ```
+3. Просмотр логов:
+   ```
+   docker logs -f bible-bot
+   ```
+4. Остановка и удаление контейнера:
+   ```
+   docker stop bible-bot
+   docker rm bible-bot
+   ```
+
+## Отладка и логирование
+- Уровень логирования настраивается в `config/settings.py` через `LOG_LEVEL`
+- Логи включают информацию о выборе книг, глав, API-запросах и ошибках
+
+## Расширение функциональности
+
+### Добавление новых функций
+1. Создать обработчики в соответствующих файлах `handlers/`
+2. При необходимости добавить кнопки в `keyboards/main.py` 
+3. Добавить параметр в `config/settings.py` для возможности включения/отключения функции
+
+### Добавление новых API-методов
+1. Добавить метод в класс `BibleAPIClient` в `utils/api_client.py`
+2. Реализовать кэширование результатов при необходимости
+
+![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/probedrik/gospel_bot?utm_source=oss&utm_medium=github&utm_campaign=probedrik%2Fgospel_bot&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)
