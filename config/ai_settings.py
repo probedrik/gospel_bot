@@ -1,8 +1,9 @@
 # Настройки ИИ-функций для бота
+import os
 
 ENABLE_GPT_EXPLAIN = True  # Включить/отключить кнопку и функцию "Объяснить смысл с ИИ"
 # Ваш ключ OpenRouter (замените на свой)
-OPENROUTER_API_KEY = "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"
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 # Модель по умолчанию (можно поменять)
 OPENROUTER_MODEL = "mistralai/mistral-small-3.1-24b-instruct:free"
 
@@ -28,3 +29,6 @@ AI_UNLIMITED_USERS = {AI_OWNER_ID}
 AI_DAILY_LIMIT = 5  # Лимит ИИ-запросов в сутки на пользователя
 # Чтобы добавить пользователя в исключения, добавьте его ID в AI_UNLIMITED_USERS
 # Пример: AI_UNLIMITED_USERS = {2040516595, 123456789, 987654321}
+
+# Включить подробное логирование ответов OpenRouter API (для отладки)
+LOG_OPENROUTER_RESPONSE = False

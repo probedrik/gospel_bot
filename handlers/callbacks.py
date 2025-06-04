@@ -105,10 +105,10 @@ async def next_chapter(callback: CallbackQuery, state: FSMContext, db=None):
             # Обновляем текущую главу в состоянии
             await set_current_chapter(state, next_chapter_num)
 
-            # Отправляем текст с разбивкой
+            # Используем новую систему постраничного просмотра
             await callback.message.edit_text("Загрузка...")
-            for part in split_text(text):
-                await callback.message.answer(part)
+            from handlers.text_messages import show_chapter_page
+            await show_chapter_page(callback, book_id, next_chapter_num, 0, state, is_new_chapter=True)
 
             # Проверяем, добавлена ли глава в закладки
             is_bookmarked = await is_chapter_bookmarked(
@@ -117,15 +117,11 @@ async def next_chapter(callback: CallbackQuery, state: FSMContext, db=None):
             logger.info(
                 f"Статус закладки для главы {book_id}:{next_chapter_num}: {is_bookmarked}")
 
-            # СНАЧАЛА добавляем кнопки Толкования и ИИ
-            extras_kb = get_chapter_extras_keyboard(book_id, next_chapter_num)
-            if extras_kb:
-                await callback.message.answer("Дополнительные действия:", reply_markup=extras_kb)
-            # Затем навигация
+            # Навигация по главам
             has_previous = next_chapter_num > 1
             has_next = next_chapter_num < max_chapter
             await callback.message.answer(
-                "Выберите действие:",
+                "Навигация по главам:",
                 reply_markup=create_navigation_keyboard(
                     has_previous, has_next, is_bookmarked)
             )
@@ -169,10 +165,10 @@ async def prev_chapter(callback: CallbackQuery, state: FSMContext, db=None):
             # Обновляем текущую главу в состоянии
             await set_current_chapter(state, prev_chapter_num)
 
-            # Отправляем текст с разбивкой
+            # Используем новую систему постраничного просмотра
             await callback.message.edit_text("Загрузка...")
-            for part in split_text(text):
-                await callback.message.answer(part)
+            from handlers.text_messages import show_chapter_page
+            await show_chapter_page(callback, book_id, prev_chapter_num, 0, state, is_new_chapter=True)
 
             # Проверяем, добавлена ли глава в закладки
             is_bookmarked = await is_chapter_bookmarked(
@@ -188,13 +184,9 @@ async def prev_chapter(callback: CallbackQuery, state: FSMContext, db=None):
             max_chapter = bible_data.max_chapters.get(book_id, 0)
             has_next = prev_chapter_num < max_chapter
 
-            # СНАЧАЛА добавляем кнопки Толкования и ИИ
-            extras_kb = get_chapter_extras_keyboard(book_id, prev_chapter_num)
-            if extras_kb:
-                await callback.message.answer("Дополнительные действия:", reply_markup=extras_kb)
-            # Затем навигация
+            # Навигация по главам
             await callback.message.answer(
-                "Выберите действие:",
+                "Навигация по главам:",
                 reply_markup=create_navigation_keyboard(
                     has_previous, has_next, is_bookmarked)
             )
@@ -234,15 +226,18 @@ async def daily_selected(callback: CallbackQuery, state: FSMContext):
             book_id, chapter, translation
         )
 
-        # Отправляем текст с разбивкой
-        for part in split_text(text):
-            await callback.message.answer(part)
+        # Используем новую систему постраничного просмотра
+        from handlers.text_messages import show_chapter_page
+        await show_chapter_page(callback, book_id, chapter, 0, state, is_new_chapter=True)
 
         # Добавляем клавиатуру навигации
         has_previous = chapter > 1
+        max_chapter = bible_data.max_chapters.get(book_id, 0)
+        has_next = chapter < max_chapter
         await callback.message.answer(
-            "Выберите действие:",
-            reply_markup=create_navigation_keyboard(has_previous)
+            "Навигация по главам:",
+            reply_markup=create_navigation_keyboard(
+                has_previous, has_next, False)
         )
         await callback.answer()
     except Exception as e:

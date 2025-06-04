@@ -2,6 +2,7 @@
 Обработчики колбэков для работы с закладками.
 """
 import logging
+import re
 from aiogram import Router, F
 from aiogram.types import CallbackQuery
 from aiogram.fsm.context import FSMContext
@@ -275,18 +276,13 @@ async def bookmark_selected(callback: CallbackQuery, state: FSMContext, db=None)
         # Получаем текст главы
         text = await bible_api.get_formatted_chapter(book_id, chapter, translation)
 
-        # Отправляем текст главы
-        for part in split_text(text):
-            await callback.message.answer(part)
+        # Используем новую систему постраничного просмотра
+        from handlers.text_messages import show_chapter_page
+        await show_chapter_page(callback, book_id, chapter, 0, state, is_new_chapter=True)
 
-        # СНАЧАЛА добавляем кнопки Толкования и ИИ
-        from handlers.callbacks import get_chapter_extras_keyboard
-        extras_kb = get_chapter_extras_keyboard(book_id, chapter)
-        if extras_kb:
-            await callback.message.answer(reply_markup=extras_kb)
-        # Затем навигация
+        # Навигация по главам
         await callback.message.answer(
-            f"Вы открыли закладку: {book_name} {chapter}",
+            f"Вы открыли закладку: {book_name} {chapter}\nНавигация по главам:",
             reply_markup=create_navigation_keyboard(
                 has_previous, has_next, is_bookmarked)
         )
@@ -302,3 +298,28 @@ async def bookmark_selected(callback: CallbackQuery, state: FSMContext, db=None)
             f"Не удалось загрузить главу из закладки.",
             reply_markup=get_main_keyboard()
         )
+
+
+@router.callback_query(F.data.regexp(r'^add_bookmark_(\d+)_(\d+)$'))
+async def add_bookmark_from_plan(callback: CallbackQuery, state: FSMContext):
+    """Обработчик для добавления закладки из плана чтения (по id книги и главе)"""
+    m = re.match(r'^add_bookmark_(\d+)_(\d+)$', callback.data)
+    if not m:
+        await callback.answer("Ошибка данных закладки")
+        return
+    book_id, chapter = int(m.group(1)), int(m.group(2))
+    from database.db_manager import db_manager
+    user_id = callback.from_user.id
+    book_name = bible_data.get_book_name(book_id)
+    display_text = f"{book_name} {chapter}"
+    # Добавляем в БД
+    try:
+        await db_manager.add_user(user_id, callback.from_user.username or "", callback.from_user.first_name or "")
+        bookmarks = await db_manager.get_bookmarks(user_id)
+        bookmark_exists = any(bm[0] == book_id and bm[1]
+                              == chapter for bm in bookmarks)
+        if not bookmark_exists:
+            await db_manager.add_bookmark(user_id, book_id, chapter, display_text)
+        await callback.answer("Закладка добавлена")
+    except Exception as e:
+        await callback.answer("Ошибка при добавлении закладки")

@@ -23,6 +23,11 @@ EXCEL_FILES = {
 API_URL = "https://justbible.ru/api"
 API_TIMEOUT = 10  # секунды
 
+# Настройки источника данных Библии
+# True - использовать локальные JSON файлы, False - использовать API
+USE_LOCAL_FILES = True
+LOCAL_FILES_PATH = "./local"  # путь к папке с локальными JSON файлами
+
 # Параметры сообщений Telegram
 MESS_MAX_LENGTH = 4096  # максимальная длина сообщения
 

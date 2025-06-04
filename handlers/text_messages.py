@@ -1,7 +1,7 @@
 """
 Обработчики текстовых сообщений бота.
 """
-from config.settings import MARKDOWN_ENABLED, MARKDOWN_MODE, MARKDOWN_BOLD_TITLE, MARKDOWN_QUOTE, MARKDOWN_ESCAPE
+from config.settings import MARKDOWN_ENABLED, MARKDOWN_MODE, MARKDOWN_BOLD_TITLE, MARKDOWN_QUOTE, MARKDOWN_ESCAPE, MESS_MAX_LENGTH
 import logging
 import re
 from datetime import datetime
@@ -107,7 +107,6 @@ async def random_verse(message: Message, state: FSMContext, db=None):
         text = await bible_api.get_random_verse(translation)
         await message.answer(text)
         # Попробуем извлечь book и chapter для кнопки "Открыть всю главу"
-        import re
         match = re.search(r"([А-Яа-яёЁ\s]+)\s(\d+):\d+", text)
         if match:
             book_raw = match.group(1).strip().lower()
@@ -131,36 +130,49 @@ async def help_message(message: Message):
     """Обработчик для получения справки"""
     help_text = (
         "<b>📚 Помощь по использованию бота</b>\n\n"
-        "Возможности:\n"
-        "• 📖 Быстрый выбор книги и главы\n"
-        "• 🔍 Поиск стихов по ссылке (например, <code>Ин 3:16</code>)\n"
+        "<b>🎯 Основные возможности:</b>\n"
+        "• 📖 Быстрый выбор книги и главы через меню\n"
+        "• 🔍 Поиск стихов по ссылке (например, <code>Ин 3:16</code>, <code>Быт 1:1-3</code>)\n"
+        "• 📅 <b>Планы чтения Библии</b> с отслеживанием прогресса\n"
         "• 📝 Закладки на любимые главы и быстрый доступ к ним\n"
-        "• 📚 Тематические подборки стихов (кнопка '📚 Темы' в главном меню)\n"
-        "• 💬 Поиск по словам (если включено)\n"
-        "• 📊 Случайный стих\n"
-        "• 🧑‍🏫 Толкования проф. Лопухина по каждому стиху и главе (постранично, с кнопками)\n"
-        "• 🤖 Объяснение смысла главы или стиха с помощью ИИ (кнопка всегда доступна, лимит 5 в сутки)\n"
-        "• Кэширование популярных ИИ-ответов для экономии лимита\n"
-        "• Включение/отключение автоудаления сообщений: /clean_on и /clean_off\n"
+        "• 📚 Тематические подборки стихов\n"
+        "• 🔄 Смена перевода (Синодальный, Современный РБО)\n"
+        "• 📊 Случайный стих для ежедневного вдохновения\n"
+        "• 🧑‍🏫 Толкования проф. Лопухина (постранично, с навигацией)\n"
+        "• 🤖 ИИ-разбор смысла глав и стихов (лимит 5 запросов в сутки)\n"
+        "• 💾 Кэширование популярных ИИ-ответов для экономии лимита\n"
+        "• 🗂️ Работа с локальными файлами или внешним API\n"
         "\n"
-        "<b>Как сменить перевод Библии?</b>\n"
-        "Отправьте команду <b>🔄 Сменить перевод</b> в чат или выберите соответствующий пункт в этом меню.\n"
+        "<b>📅 Планы чтения:</b>\n"
+        "• Выберите план из доступных (1 год, Евангелие, ВЗ+НЗ)\n"
+        "• Отмечайте прочитанные дни кнопкой \"Прочитано\"\n"
+        "• Следите за прогрессом выполнения плана\n"
+        "• Навигация по дням с толкованиями и ИИ-разбором\n"
         "\n"
-        "<b>Как пользоваться:</b>\n"
-        "- Выберите книгу и главу через меню или введите ссылку (например, <code>Ин 3</code>, <code>Быт 1:1</code>)\n"
-        "- Для каждой главы доступны кнопки: 'Толкование проф. Лопухина' и '🤖 Разбор от ИИ'\n"
-        "- Навигируйте по главам с помощью стрелок\n"
-        "- Добавляйте и удаляйте закладки\n"
-        "- Открывайте толкования и объяснения ИИ в один клик\n"
+        "<b>🔍 Поиск и навигация:</b>\n"
+        "• Введите ссылку: <code>Ин 3</code> (вся глава), <code>Ин 3:16</code> (стих), <code>Ин 3:16-18</code> (диапазон)\n"
+        "• Поддержка сокращений: Быт, Исх, Мф, Мк, Лк, Ин и др.\n"
+        "• Английские названия: Gen, Matt, John и др.\n"
+        "• Навигация стрелками между главами\n"
+        "• Кнопки толкований и ИИ-разбора для каждого отрывка\n"
         "\n"
-        "<b>Примеры команд:</b>\n"
-        "• /start — Запустить бота\n"
-        "• /help — Показать эту справку\n"
-        "• /books — Показать список книг\n"
-        "• /random — Получить случайный стих\n"
-        "• /bookmarks — Показать ваши закладки\n"
-        "• /clean_on — Включить автоудаление сообщений\n"
+        "<b>⚙️ Настройки:</b>\n"
+        "• /clean_on — Включить автоудаление сообщений при навигации\n"
         "• /clean_off — Отключить автоудаление сообщений\n"
+        "• 🔄 Сменить перевод — переключение между переводами\n"
+        "\n"
+        "<b>📋 Команды:</b>\n"
+        "• /start — Запустить бота и показать главное меню\n"
+        "• /help — Показать эту справку\n"
+        "• /books — Показать список всех книг Библии\n"
+        "• /random — Получить случайный стих\n"
+        "• /bookmarks — Показать ваши сохраненные закладки\n"
+        "\n"
+        "<b>💡 Советы:</b>\n"
+        "• Добавляйте в закладки важные главы для быстрого доступа\n"
+        "• Используйте планы чтения для систематического изучения\n"
+        "• ИИ-разбор поможет лучше понять смысл сложных отрывков\n"
+        "• Толкования Лопухина дают глубокий исторический контекст\n"
     )
     await message.answer(help_text, parse_mode="HTML")
 
@@ -254,15 +266,6 @@ async def chapter_input(message: Message, state: FSMContext, db=None):
     translation = await get_current_translation(state)
 
     try:
-        text = await bible_api.get_formatted_chapter(book_id, chapter, translation)
-
-        if text.startswith("Ошибка:"):
-            await message.answer(
-                f"Произошла ошибка при загрузке главы {chapter} книги {book_name}.",
-                reply_markup=get_main_keyboard()
-            )
-            return
-
         # Проверяем, добавлена ли глава в закладки
         is_bookmarked = False
         if db:
@@ -274,65 +277,12 @@ async def chapter_input(message: Message, state: FSMContext, db=None):
         has_previous = chapter > 1
         has_next = chapter < max_chapters
 
-        # Отправляем текст с разбивкой
-        for part in split_text(text):
-            await message.answer(part)
+        # Используем новую систему постраничного просмотра
+        await show_chapter_page(message, book_id, chapter, 0, state, is_new_chapter=True)
 
-        # Получаем английское сокращение для поиска в комментарии
-        en_book = None
-        en_to_ru = {
-            "Gen": "Быт", "Exod": "Исх", "Lev": "Лев", "Num": "Чис", "Deut": "Втор", "Josh": "Нав", "Judg": "Суд", "Ruth": "Руф",
-            "1Sam": "1Цар", "2Sam": "2Цар", "1Kgs": "3Цар", "2Kgs": "4Цар", "1Chr": "1Пар", "2Chr": "2Пар", "Ezra": "Езд", "Neh": "Неем",
-            "Esth": "Есф", "Job": "Иов", "Ps": "Пс", "Prov": "Прит", "Eccl": "Еккл", "Song": "Песн", "Isa": "Ис", "Jer": "Иер",
-            "Lam": "Плач", "Ezek": "Иез", "Dan": "Дан", "Hos": "Ос", "Joel": "Иоил", "Amos": "Ам", "Obad": "Авд", "Jonah": "Ион",
-            "Mic": "Мих", "Nah": "Наум", "Hab": "Авв", "Zeph": "Соф", "Hag": "Агг", "Zech": "Зах", "Mal": "Мал",
-            "Matt": "Мф", "Mark": "Мк", "Luke": "Лк", "John": "Ин", "Acts": "Деян", "Jas": "Иак", "1Pet": "1Пет", "2Pet": "2Пет",
-            "1John": "1Ин", "2John": "2Ин", "3John": "3Ин", "Jude": "Иуд", "Rom": "Рим", "1Cor": "1Кор", "2Cor": "2Кор",
-            "Gal": "Гал", "Eph": "Еф", "Phil": "Флп", "Col": "Кол", "1Thess": "1Фес", "2Thess": "2Фес", "1Tim": "1Тим",
-            "2Tim": "2Тим", "Titus": "Тит", "Phlm": "Флм", "Heb": "Евр", "Rev": "Откр"
-        }
-        for en, ru in en_to_ru.items():
-            if ru == book_abbr:
-                en_book = en
-                break
-        # Кнопки для главы: Толкование Лопухина и разбор от ИИ (всегда, даже если нет толкования)
-        en_book = None
-        en_to_ru = {
-            "Gen": "Быт", "Exod": "Исх", "Lev": "Лев", "Num": "Чис", "Deut": "Втор", "Josh": "Нав", "Judg": "Суд", "Ruth": "Руф",
-            "1Sam": "1Цар", "2Sam": "2Цар", "1Kgs": "3Цар", "2Kgs": "4Цар", "1Chr": "1Пар", "2Chr": "2Пар", "Ezra": "Езд", "Neh": "Неем",
-            "Esth": "Есф", "Job": "Иов", "Ps": "Пс", "Prov": "Прит", "Eccl": "Еккл", "Song": "Песн", "Isa": "Ис", "Jer": "Иер",
-            "Lam": "Плач", "Ezek": "Иез", "Dan": "Дан", "Hos": "Ос", "Joel": "Иоил", "Amos": "Ам", "Obad": "Авд", "Jonah": "Ион",
-            "Mic": "Мих", "Nah": "Наум", "Hab": "Авв", "Zeph": "Соф", "Hag": "Агг", "Zech": "Зах", "Mal": "Мал",
-            "Matt": "Мф", "Mark": "Мк", "Luke": "Лк", "John": "Ин", "Acts": "Деян", "Jas": "Иак", "1Pet": "1Пет", "2Pet": "2Пет",
-            "1John": "1Ин", "2John": "2Ин", "3John": "3Ин", "Jude": "Иуд", "Rom": "Рим", "1Cor": "1Кор", "2Cor": "2Кор",
-            "Gal": "Гал", "Eph": "Еф", "Phil": "Флп", "Col": "Кол", "1Thess": "1Фес", "2Thess": "2Фес", "1Tim": "1Тим",
-            "2Tim": "2Тим", "Titus": "Тит", "Phlm": "Флм", "Heb": "Евр", "Rev": "Откр"
-        }
-        for en, ru in en_to_ru.items():
-            if ru == book_abbr:
-                en_book = en
-                break
-        buttons = []
-        if en_book:
-            buttons.append([
-                InlineKeyboardButton(
-                    text="Толкование проф. Лопухина",
-                    callback_data=f"open_commentary_{en_book}_{chapter}_0"
-                )
-            ])
-            if ENABLE_GPT_EXPLAIN:
-                buttons.append([
-                    InlineKeyboardButton(
-                        text="🤖 Разбор от ИИ",
-                        callback_data=f"gpt_explain_{en_book}_{chapter}_0"
-                    )
-                ])
-        if buttons:
-            kb = InlineKeyboardMarkup(inline_keyboard=buttons)
-            await message.answer("Доступны дополнительные действия:", reply_markup=kb)
-        # Отправляем клавиатуру навигации
+        # Отправляем клавиатуру навигации по главам
         await message.answer(
-            f"{book_name}, глава {chapter}",
+            f"Навигация по главам:",
             reply_markup=create_navigation_keyboard(
                 has_previous, has_next, is_bookmarked)
         )
@@ -363,9 +313,6 @@ async def search_verse(message: Message):
 async def verse_reference(message: Message, state: FSMContext):
     """Обработчик ссылок на стихи, диапазоны и главы: 'Книга глава', 'Книга глава:стих', 'Книга глава:стих-стих'"""
     try:
-        text, meta = await get_verse_by_reference(state, message.text)
-        for part in split_text(text):
-            await message.answer(part)
         match = re.match(
             r'^([а-яА-ЯёЁ0-9\s]+)\s+(\d+)(?::(\d+)(?:-(\d+))?)?$', message.text.strip(), re.IGNORECASE)
         if match:
@@ -374,57 +321,51 @@ async def verse_reference(message: Message, state: FSMContext):
             verse = match.group(3)
             book_abbr = bible_data.normalize_book_name(book_raw)
             book_id = bible_data.get_book_id(book_abbr)
-            en_book = None
-            en_to_ru = {
-                "Gen": "Быт", "Exod": "Исх", "Lev": "Лев", "Num": "Чис", "Deut": "Втор", "Josh": "Нав", "Judg": "Суд", "Ruth": "Руф",
-                "1Sam": "1Цар", "2Sam": "2Цар", "1Kgs": "3Цар", "2Kgs": "4Цар", "1Chr": "1Пар", "2Chr": "2Пар", "Ezra": "Езд", "Neh": "Неем",
-                "Esth": "Есф", "Job": "Иов", "Ps": "Пс", "Prov": "Прит", "Eccl": "Еккл", "Song": "Песн", "Isa": "Ис", "Jer": "Иер",
-                "Lam": "Плач", "Ezek": "Иез", "Dan": "Дан", "Hos": "Ос", "Joel": "Иоил", "Amos": "Ам", "Obad": "Авд", "Jonah": "Ион",
-                "Mic": "Мих", "Nah": "Наум", "Hab": "Авв", "Zeph": "Соф", "Hag": "Агг", "Zech": "Зах", "Mal": "Мал",
-                "Matt": "Мф", "Mark": "Мк", "Luke": "Лк", "John": "Ин", "Acts": "Деян", "Jas": "Иак", "1Pet": "1Пет", "2Pet": "2Пет",
-                "1John": "1Ин", "2John": "2Ин", "3John": "3Ин", "Jude": "Иуд", "Rom": "Рим", "1Cor": "1Кор", "2Cor": "2Кор",
-                "Gal": "Гал", "Eph": "Еф", "Phil": "Флп", "Col": "Кол", "1Thess": "1Фес", "2Thess": "2Фес", "1Tim": "1Тим",
-                "2Tim": "2Тим", "Titus": "Тит", "Phlm": "Флм", "Heb": "Евр", "Rev": "Откр"
-            }
-            for en, ru in en_to_ru.items():
-                if ru == book_abbr:
-                    en_book = en
-                    break
-            buttons = []
-            max_chapters = bible_data.max_chapters.get(book_id, 1)
-            has_previous = chapter > 1
-            has_next = chapter < max_chapters
-            is_bookmarked = False
-            # Для главы (если verse отсутствует или == 0): полноценная навигация и кнопки
+
+            # Для главы (если verse отсутствует или == 0): используем постраничный просмотр
             if not verse or verse == '0' or verse == 0:
+                # Сохраняем выбранную книгу и главу в состоянии
+                await set_chosen_book(state, book_id)
+                await set_current_chapter(state, chapter)
+
+                # Используем новую систему постраничного просмотра
+                await show_chapter_page(message, book_id, chapter, 0, state, is_new_chapter=True)
+
                 # Клавиатура навигации по главам
+                max_chapters = bible_data.max_chapters.get(book_id, 1)
+                has_previous = chapter > 1
+                has_next = chapter < max_chapters
+                is_bookmarked = False
                 nav_kb = create_navigation_keyboard(
                     has_previous, has_next, is_bookmarked)
                 await message.answer(
-                    f"{bible_data.get_book_name(book_id)}, глава {chapter}",
+                    f"Навигация по главам:",
                     reply_markup=nav_kb
                 )
-                # Кнопки "Толкование проф. Лопухина" и "🤖 Разбор от ИИ"
-                extra_buttons = []
-                if en_book:
-                    extra_buttons.append([
-                        InlineKeyboardButton(
-                            text="Толкование проф. Лопухина",
-                            callback_data=f"open_commentary_{en_book}_{chapter}_0"
-                        )
-                    ])
-                if ENABLE_GPT_EXPLAIN:
-                    extra_buttons.append([
-                        InlineKeyboardButton(
-                            text="🤖 Разбор от ИИ",
-                            callback_data=f"gpt_explain_{en_book}_{chapter}_0"
-                        )
-                    ])
-                if extra_buttons:
-                    kb = InlineKeyboardMarkup(inline_keyboard=extra_buttons)
-                    await message.answer("Доступны дополнительные действия:", reply_markup=kb)
             else:
-                # Для стиха — как было
+                # Для стиха — получаем текст и отправляем как раньше
+                text, meta = await get_verse_by_reference(state, message.text)
+                for part in split_text(text):
+                    await message.answer(part)
+
+                en_book = None
+                en_to_ru = {
+                    "Gen": "Быт", "Exod": "Исх", "Lev": "Лев", "Num": "Чис", "Deut": "Втор", "Josh": "Нав", "Judg": "Суд", "Ruth": "Руф",
+                    "1Sam": "1Цар", "2Sam": "2Цар", "1Kgs": "3Цар", "2Kgs": "4Цар", "1Chr": "1Пар", "2Chr": "2Пар", "Ezra": "Езд", "Neh": "Неем",
+                    "Esth": "Есф", "Job": "Иов", "Ps": "Пс", "Prov": "Прит", "Eccl": "Еккл", "Song": "Песн", "Isa": "Ис", "Jer": "Иер",
+                    "Lam": "Плач", "Ezek": "Иез", "Dan": "Дан", "Hos": "Ос", "Joel": "Иоил", "Amos": "Ам", "Obad": "Авд", "Jonah": "Ион",
+                    "Mic": "Мих", "Nah": "Наум", "Hab": "Авв", "Zeph": "Соф", "Hag": "Агг", "Zech": "Зах", "Mal": "Мал",
+                    "Matt": "Мф", "Mark": "Мк", "Luke": "Лк", "John": "Ин", "Acts": "Деян", "Jas": "Иак", "1Pet": "1Пет", "2Pet": "2Пет",
+                    "1John": "1Ин", "2John": "2Ин", "3John": "3Ин", "Jude": "Иуд", "Rom": "Рим", "1Cor": "1Кор", "2Cor": "2Кор",
+                    "Gal": "Гал", "Eph": "Еф", "Phil": "Флп", "Col": "Кол", "1Thess": "1Фес", "2Thess": "2Фес", "1Tim": "1Тим",
+                    "2Tim": "2Тим", "Titus": "Тит", "Phlm": "Флм", "Heb": "Евр", "Rev": "Откр"
+                }
+                for en, ru in en_to_ru.items():
+                    if ru == book_abbr:
+                        en_book = en
+                        break
+
+                buttons = []
                 if book_id:
                     buttons.append([
                         InlineKeyboardButton(
@@ -460,6 +401,8 @@ async def verse_reference(message: Message, state: FSMContext):
                 if buttons:
                     kb = InlineKeyboardMarkup(inline_keyboard=buttons)
                     await message.answer("Доступны дополнительные действия:", reply_markup=kb)
+        else:
+            await message.answer("Не удалось распознать ссылку на стих. Проверьте правильность формата.")
     except Exception as e:
         logger.error(f"Ошибка в обработке ссылки на стих: {e}", exc_info=True)
         await message.answer("Не удалось найти указанный отрывок. Проверьте правильность ссылки.")
@@ -662,7 +605,6 @@ async def topic_verse_callback(callback: CallbackQuery, state: FSMContext):
         except Exception:
             pass
     # Добавить только inline-кнопки под стихом
-    import re
     match = re.match(r"([А-Яа-яёЁ0-9\s]+)\s(\d+)(?::(\d+)(-\d+)?)?", verse_ref)
     if match:
         book_raw = match.group(1).strip().lower()
@@ -731,10 +673,12 @@ async def topic_verse_callback(callback: CallbackQuery, state: FSMContext):
 # --- Толкование и ИИ-разбор: сохраняем id сообщений для последующего удаления ---
 @router.callback_query(F.data.regexp(r'^open_commentary_([A-Za-z0-9]+)_(\d+)_(\d+)$'))
 async def open_commentary_callback(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+
     match = re.match(
         r'^open_commentary_([A-Za-z0-9]+)_(\d+)_(\d+)$', callback.data)
     if not match:
-        await callback.answer("Ошибка запроса")
+        await callback.message.answer("Ошибка запроса")
         return
     book = match.group(1)
     chapter = int(match.group(2))
@@ -754,15 +698,16 @@ async def open_commentary_callback(callback: CallbackQuery, state: FSMContext):
             await state.update_data(last_topic_commentary_msg_id=msg.message_id)
     else:
         await callback.message.answer("Толкование не найдено.")
-    await callback.answer()
 
 
 @router.callback_query(F.data.regexp(r'^open_commentary_([A-Za-z0-9]+)_(\d+)_0$'))
 async def open_commentary_chapter_paginated(callback: CallbackQuery):
+    await callback.answer()
+
     match = re.match(
         r'^open_commentary_([A-Za-z0-9]+)_(\d+)_0$', callback.data)
     if not match:
-        await callback.answer("Ошибка запроса")
+        await callback.message.answer("Ошибка запроса")
         return
     book = match.group(1)
     chapter = int(match.group(2))
@@ -771,19 +716,20 @@ async def open_commentary_chapter_paginated(callback: CallbackQuery):
         book, chapter)
     if not all_comments:
         await callback.message.answer("Толкования на главу не найдено.")
-        await callback.answer()
         return
     # Сохраняем в state список комментариев
     await callback.message.delete()
     await show_commentary_page(callback, book, chapter, all_comments, 0)
 
 
-@router.callback_query(F.data.regexp(r'^commentary_page_([A-Zazl0-9]+)_(\d+)_(\d+)$'))
-async def commentary_page_callback(callback: CallbackQuery):
+@router.callback_query(F.data.regexp(r'^commentary_page_([A-Za-z0-9]+)_(\d+)_(\d+)$'))
+async def commentary_page_callback(callback: CallbackQuery, state: FSMContext = None):
+    await callback.answer()
+
     match = re.match(
-        r'^commentary_page_([A-Zazl0-9]+)_(\d+)_(\d+)$', callback.data)
+        r'^commentary_page_([A-Za-z0-9]+)_(\d+)_(\d+)$', callback.data)
     if not match:
-        await callback.answer("Ошибка запроса")
+        await callback.message.answer("Ошибка запроса")
         return
     book = match.group(1)
     chapter = int(match.group(2))
@@ -792,10 +738,10 @@ async def commentary_page_callback(callback: CallbackQuery):
     all_comments = lopukhin_commentary.get_all_commentaries_for_chapter(
         book, chapter)
     await callback.message.delete()
-    await show_commentary_page(callback, book, chapter, all_comments, idx)
+    await show_commentary_page(callback, book, chapter, all_comments, idx, state)
 
 
-async def show_commentary_page(callback, book, chapter, all_comments, idx):
+async def show_commentary_page(callback, book, chapter, all_comments, idx, state=None):
     # Убираем дубли по номеру стиха (verse): только первое вхождение
     seen = set()
     filtered_comments = []
@@ -829,10 +775,15 @@ async def show_commentary_page(callback, book, chapter, all_comments, idx):
                 text="🤖 Разбор от ИИ",
                 callback_data=f"gpt_explain_{book}_{chapter}_0"
             ))
+    # Формируем клавиатуру правильно
+    keyboard_rows = []
+    if nav_kb:
+        keyboard_rows.append(nav_kb)
+    if extra_kb:
+        keyboard_rows.append(extra_kb)
+
     markup = InlineKeyboardMarkup(
-        inline_keyboard=[nav_kb] if nav_kb else [] +
-        ([extra_kb] if extra_kb else [])
-    )
+        inline_keyboard=keyboard_rows) if keyboard_rows else None
     # Отправляем толкование с учётом настроек форматирования
     formatted, opts = format_ai_or_commentary(text, title)
     msg = await callback.message.answer(formatted, reply_markup=markup, **opts)
@@ -843,64 +794,78 @@ async def show_commentary_page(callback, book, chapter, all_comments, idx):
 
 @router.callback_query(F.data.regexp(r'^gpt_explain_([A-Za-z0-9]+)_(\d+)_(\d+)$'))
 async def gpt_explain_callback(callback: CallbackQuery, state: FSMContext = None):
-    import re
     # --- AI LIMIT CHECK ---
     user_id = callback.from_user.id if hasattr(
         callback, "from_user") else callback.message.from_user.id
     from handlers.text_messages import ai_check_and_increment_db
     if not await ai_check_and_increment_db(user_id):
-        await callback.message.answer("Вы исчерпали лимит ИИ-запросов на сегодня.")
-        await callback.answer()
+        await callback.answer("Вы исчерпали лимит ИИ-запросов на сегодня.")
         return
+
+    # Отвечаем на callback с индикатором загрузки
+    await callback.answer("🤖 Обрабатываю запрос к ИИ...", show_alert=False)
+
     match = re.match(
         r'^gpt_explain_([A-Za-z0-9]+)_(\d+)_(\d+)$', callback.data)
     if not match:
-        await callback.answer("Ошибка запроса к ИИ")
+        await callback.message.answer("Ошибка запроса к ИИ")
         return
     book = match.group(1)
     chapter = int(match.group(2))
     verse = int(match.group(3))
-    # Получаем текст главы или стиха
-    text = ""
-    # Формируем ссылку для get_verse_by_reference с русским сокращением
-    from utils.bible_data import bible_data
-    ru_book = bible_data.book_synonyms.get(book.lower(), book)
-    book_id = bible_data.get_book_id(ru_book)
-    reference = f"{ru_book} {chapter}:{verse}" if verse != 0 else f"{ru_book} {chapter}"
-    if verse == 0:
-        # Исправление: передаём числовой ID книги, а не строку
-        if not book_id:
-            await callback.message.answer(f"Книга '{ru_book}' не найдена.")
-            await callback.answer()
-            return
-        # Используем корректный код перевода для синодального (rst)
-        text = await bible_api.get_formatted_chapter(book_id, chapter, "rst")
-    else:
-        from handlers.verse_reference import get_verse_by_reference
-        st = state if state is not None else None
-        try:
-            text, _ = await get_verse_by_reference(st, reference)
-        except Exception:
-            text, _ = await get_verse_by_reference(None, reference)
-    # Проверка на ошибку формата
-    if text.startswith("Неверный формат ссылки") or text.startswith("Книга '"):
-        await callback.message.answer(text)
-        await callback.answer()
-        return
-    # Формируем запрос к ИИ
-    prompt = f"Объясни смысл следующего текста:\n\n{text}\n\nОтветь кратко и по существу."
+
+    # Показываем индикатор загрузки пользователю
+    loading_msg = await callback.message.answer("🤖 Генерирую разбор от ИИ...")
+
     try:
+        # Получаем текст главы или стиха
+        text = ""
+        # Формируем ссылку для get_verse_by_reference с русским сокращением
+        from utils.bible_data import bible_data
+        ru_book = bible_data.book_synonyms.get(book.lower(), book)
+        book_id = bible_data.get_book_id(ru_book)
+        reference = f"{ru_book} {chapter}:{verse}" if verse != 0 else f"{ru_book} {chapter}"
+        if verse == 0:
+            # Исправление: передаём числовой ID книги, а не строку
+            if not book_id:
+                await loading_msg.edit_text(f"Книга '{ru_book}' не найдена.")
+                return
+            # Используем корректный код перевода для синодального (rst)
+            text = await bible_api.get_formatted_chapter(book_id, chapter, "rst")
+        else:
+            from handlers.verse_reference import get_verse_by_reference
+            st = state if state is not None else None
+            try:
+                text, _ = await get_verse_by_reference(st, reference)
+            except Exception:
+                text, _ = await get_verse_by_reference(None, reference)
+
+        # Проверка на ошибку формата
+        if text.startswith("Неверный формат ссылки") or text.startswith("Книга '"):
+            await loading_msg.edit_text(text)
+            return
+
+        # Формируем запрос к ИИ
+        prompt = f"Объясни смысл следующего текста:\n\n{text}\n\nОтветь кратко и по существу."
         response = await ask_gpt_explain(prompt)
+
+        # Удаляем сообщение загрузки
+        await loading_msg.delete()
+
+        # Отправляем результат
         formatted, opts = format_ai_or_commentary(
             response, title="🤖 Разбор от ИИ")
         for part in split_text(formatted):
             msg = await callback.message.answer(part, **opts)
             if state:
                 await state.update_data(last_topic_ai_msg_id=msg.message_id)
+
     except Exception as e:
         logger.error(f"Ошибка при обращении к ИИ: {e}")
-        await callback.message.answer("Произошла ошибка при обращении к ИИ. Попробуйте позже.")
-    await callback.answer()
+        try:
+            await loading_msg.edit_text("Произошла ошибка при обращении к ИИ. Попробуйте позже.")
+        except:
+            await callback.message.answer("Произошла ошибка при обращении к ИИ. Попробуйте позже.")
 
 
 @router.message(F.text.in_(get_topics_list()))
@@ -948,65 +913,19 @@ async def open_full_chapter_callback(callback: CallbackQuery, state: FSMContext)
     if not book_id:
         await callback.answer("Книга не найдена")
         return
-    translation = await get_current_translation(state)
-    text = await bible_api.get_formatted_chapter(book_id, chapter, translation)
-    sent = None
-    for part in split_text(text):
-        sent = await callback.message.answer(part)
-    # Сохраняем id сообщения с главой и сбрасываем все связанные сообщения
-    if state and sent:
-        await state.update_data(
-            last_chapter_msg_id=sent.message_id,
-            last_topic_verse_msg_id=None,
-            last_topic_commentary_msg_id=None,
-            last_topic_ai_msg_id=None,
-            last_topic_msg_id=None
-        )
+    # Используем новую систему постраничного просмотра
+    await show_chapter_page(callback, book_id, chapter, 0, state, is_new_chapter=True)
+
     # Клавиатура навигации по главам
     max_chapters = bible_data.max_chapters.get(book_id, 1)
     has_previous = chapter > 1
     has_next = chapter < max_chapters
     is_bookmarked = False
     await callback.message.answer(
-        f"{bible_data.get_book_name(book_id)}, глава {chapter}",
+        f"Навигация по главам:",
         reply_markup=create_navigation_keyboard(
             has_previous, has_next, is_bookmarked)
     )
-    # Кнопки для главы: Толкование Лопухина и разбор от ИИ (всегда, даже если нет толкования)
-    en_book = None
-    en_to_ru = {
-        "Gen": "Быт", "Exod": "Исх", "Lev": "Лев", "Num": "Чис", "Deut": "Втор", "Josh": "Нав", "Judg": "Суд", "Ruth": "Руф",
-        "1Sam": "1Цар", "2Sam": "2Цар", "1Kgs": "3Цар", "2Kgs": "4Цар", "1Chr": "1Пар", "2Chr": "2Пар", "Ezra": "Езд", "Neh": "Неем",
-        "Esth": "Есф", "Job": "Иов", "Ps": "Пс", "Prov": "Прит", "Eccl": "Еккл", "Song": "Песн", "Isa": "Ис", "Jer": "Иер",
-        "Lam": "Плач", "Ezek": "Иез", "Dan": "Дан", "Hos": "Ос", "Joel": "Иоил", "Amos": "Ам", "Obad": "Авд", "Jonah": "Ион",
-        "Mic": "Мих", "Nah": "Наум", "Hab": "Авв", "Zeph": "Соф", "Hag": "Агг", "Zech": "Зах", "Mal": "Мал",
-        "Matt": "Мф", "Mark": "Мк", "Luke": "Лк", "John": "Ин", "Acts": "Деян", "Jas": "Иак", "1Pet": "1Пет", "2Pet": "2Пет",
-        "1John": "1Ин", "2John": "2Ин", "3John": "3Ин", "Jude": "Иуд", "Rom": "Рим", "1Cor": "1Кор", "2Cor": "2Кор",
-        "Gal": "Гал", "Eph": "Еф", "Phil": "Флп", "Col": "Кол", "1Thess": "1Фес", "2Thess": "2Фес", "1Tim": "1Тим",
-        "2Tim": "2Тим", "Titus": "Тит", "Phlm": "Флм", "Heb": "Евр", "Rev": "Откр"
-    }
-    for en, ru in en_to_ru.items():
-        if ru == book_abbr:
-            en_book = en
-            break
-    extra_buttons = []
-    if en_book:
-        extra_buttons.append([
-            InlineKeyboardButton(
-                text="Толкование проф. Лопухина",
-                callback_data=f"open_commentary_{en_book}_{chapter}_0"
-            )
-        ])
-    if ENABLE_GPT_EXPLAIN:
-        extra_buttons.append([
-            InlineKeyboardButton(
-                text="🤖 Разбор от ИИ",
-                callback_data=f"gpt_explain_{en_book}_{chapter}_0"
-            )
-        ])
-    if extra_buttons:
-        kb = InlineKeyboardMarkup(inline_keyboard=extra_buttons)
-        await callback.message.answer("Доступны дополнительные действия:", reply_markup=kb)
     await callback.answer()
 
 
@@ -1092,3 +1011,763 @@ def format_ai_or_commentary(text, title=None):
     if title:
         result = f"{title}\n\n{result}"
     return result, {"parse_mode": mode}
+
+
+@router.message(F.text == "📚 План чтения")
+async def reading_plan_menu(message: Message, state: FSMContext):
+    from utils.reading_plans import get_reading_plans
+    plans = get_reading_plans()
+    if not plans:
+        await message.answer("Планы чтения не найдены.")
+        return
+    # Получаем текущий выбранный план из state
+    user_data = await state.get_data()
+    current_plan_id = user_data.get('current_reading_plan')
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(
+                text=(f"👉 {plan['title']}" if plan['id'] ==
+                      current_plan_id else plan['title']),
+                callback_data=f"readingplan_{plan['id']}")]
+            for plan in plans
+        ]
+    )
+    await message.answer("Выберите план чтения:", reply_markup=kb)
+
+
+@router.callback_query(F.data.regexp(r'^readingplan_(.+?)(?:_page(\d+))?$'))
+async def reading_plan_days(callback: CallbackQuery, state: FSMContext):
+    from utils.reading_plans import get_plan_title, get_plan_total_days, get_plan_reading
+    m = re.match(r'^readingplan_(.+?)(?:_page(\d+))?$', callback.data)
+    plan_id = m.group(1)
+    page = int(m.group(2)) if m.group(2) else 0
+
+    plan_title = get_plan_title(plan_id)
+    if not plan_title:
+        await callback.answer("План не найден")
+        return
+
+    await state.update_data(current_reading_plan=plan_id)
+    user_id = callback.from_user.id
+    from database.db_manager import db_manager
+    completed_days = set(db_manager.get_reading_progress(user_id, plan_id))
+    total = get_plan_total_days(plan_id)
+    done = len(completed_days)
+    header = f"<b>План:</b> {plan_title}\n<b>Прогресс:</b> {done} из {total} дней"
+
+    # Постранично по 20 дней
+    per_page = 20
+    start = page * per_page
+    end = min(start + per_page, total)
+
+    buttons = []
+    for day in range(start + 1, end + 1):
+        mark = "✅" if day in completed_days else ""
+        reading = get_plan_reading(plan_id, day)
+        if reading:
+            # Сокращаем текст для отображения
+            short = reading[:50] + "..." if len(reading) > 50 else reading
+            btn_text = f"{mark} День {day} - {short}"
+            buttons.append([
+                InlineKeyboardButton(
+                    text=btn_text,
+                    callback_data=f"readingday_{plan_id}_{day}"
+                )
+            ])
+
+    nav_buttons = []
+    if start > 0:
+        nav_buttons.append(InlineKeyboardButton(
+            text="⬅️ Назад", callback_data=f"readingplan_{plan_id}_page{page-1}"))
+    if end < total:
+        nav_buttons.append(InlineKeyboardButton(
+            text="Далее ➡️", callback_data=f"readingplan_{plan_id}_page{page+1}"))
+    if nav_buttons:
+        buttons.append(nav_buttons)
+
+    kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+    await callback.message.edit_text(header, reply_markup=kb, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(r'^readingday_(.+)_(\d+)$'))
+async def reading_plan_day(callback: CallbackQuery, state: FSMContext):
+    from utils.reading_plans import get_plan_title, get_plan_reading
+    m = re.match(r'^readingday_(.+)_(\d+)$', callback.data)
+    plan_id, day = m.group(1), int(m.group(2))
+
+    plan_title = get_plan_title(plan_id)
+    if not plan_title:
+        await callback.answer("План не найден")
+        return
+
+    reading = get_plan_reading(plan_id, day)
+    if not reading:
+        await callback.answer("День не найден")
+        return
+
+    user_id = callback.from_user.id
+    from database.db_manager import db_manager
+    completed = db_manager.is_reading_day_completed(user_id, plan_id, day)
+
+    # Разбиваем чтение на отдельные части (разделённые точкой с запятой)
+    entries = [entry.strip() for entry in reading.split(';') if entry.strip()]
+
+    # Формируем кнопки для каждого отрывка
+    entry_buttons = []
+    for i, entry in enumerate(entries):
+        entry_buttons.append([
+            InlineKeyboardButton(
+                text=entry,
+                callback_data=f"readingtext_{plan_id}_{day}_{i}"
+            )
+        ])
+
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=entry_buttons + [[
+            InlineKeyboardButton(
+                text="✅ Прочитано" if not completed else "Уже отмечено",
+                callback_data=f"readingdone_{plan_id}_{day}" if not completed else "noop"
+            )
+        ]]
+    )
+
+    await callback.message.edit_text(
+        f"<b>План:</b> {plan_title}\n<b>День {day}:</b>\n" +
+        "\n".join(entries),
+        reply_markup=kb, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(r'^readingtext_'))
+async def reading_plan_text(callback: CallbackQuery, state: FSMContext):
+    import logging
+    from handlers.verse_reference import get_verse_by_reference
+    parts = callback.data.split('_')
+    # readingtext_plan_{plan_num}_{day} или readingtext_{plan_id}_{day}_{entry_idx}
+    if len(parts) == 4:
+        if parts[1] == 'plan':  # readingtext_plan_{plan_num}_{day}
+            _, _, plan_num, day = parts
+            plan_id = f"plan_{plan_num}"
+            day = int(day)
+            entry_idx = 0  # Нет entry_idx в этом случае
+        else:  # readingtext_{plan_id}_{day}_{entry_idx}
+            _, plan_id, day, entry_idx = parts
+            day = int(day)
+            entry_idx = int(entry_idx)
+        logging.warning(
+            f"[reading_plan_text] callback_data={callback.data} plan_id={plan_id} day={day} entry_idx={entry_idx}")
+        from utils.reading_plans import reading_plans_manager
+        plan = reading_plans_manager.get_plan(plan_id)
+        logging.warning(f"[reading_plan_text] plan={plan}")
+        if not plan:
+            await callback.answer("План не найден")
+            return
+
+        day_reading = plan.get_day_reading(day)
+        logging.warning(f"[reading_plan_text] day_reading={day_reading}")
+        if not day_reading:
+            await callback.answer("День не найден")
+            return
+
+        # Разбиваем чтение на отдельные части (разделённые точкой с запятой)
+        entries = [entry.strip()
+                   for entry in day_reading.split(';') if entry.strip()]
+        logging.warning(f"[reading_plan_text] entries={entries}")
+
+        if entry_idx >= len(entries):
+            await callback.answer("Отрывок не найден")
+            return
+
+        entry = entries[entry_idx]
+        logging.warning(f"[reading_plan_text] entry={entry}")
+        # Получаем текст главы/стиха
+        text, meta = await get_verse_by_reference(state, entry)
+
+        # Проверяем, является ли это целой главой
+        match = re.match(r"([А-Яа-яёЁ0-9\s]+)\s(\d+)$", entry.strip())
+        if match:
+            # Это целая глава - используем постраничный просмотр
+            book_raw = match.group(1).strip().lower()
+            chapter = int(match.group(2))
+            book_abbr = bible_data.normalize_book_name(book_raw)
+            book_id = bible_data.get_book_id(book_abbr)
+
+            if book_id:
+                await show_chapter_page(callback, book_id, chapter, 0, state, is_new_chapter=True)
+            else:
+                # Fallback к старому методу
+                parts = list(split_text(text))
+                for part in parts:
+                    await callback.message.answer(part, parse_mode="HTML")
+        else:
+            # Это стих или диапазон стихов - используем старый метод с кнопками
+            parts = list(split_text(text))
+            for idx, part in enumerate(parts):
+                # Кнопки толкования только для первой части
+                if idx == 0:
+                    # Создаем клавиатуру с кнопками толкования и ИИ для отрывка
+                    buttons = []
+                    # Попробуем извлечь информацию о книге и главе для кнопок толкования
+                    match = re.match(
+                        r"([А-Яа-яёЁ0-9\s]+)\s(\d+)(?::(\d+)(-\d+)?)?", entry)
+                    if match:
+                        book_raw = match.group(1).strip().lower()
+                        chapter = int(match.group(2))
+                        verse = match.group(3)
+                        book_abbr = bible_data.normalize_book_name(book_raw)
+
+                        # Получаем английское сокращение для толкования
+                        en_book = None
+                        en_to_ru = {
+                            "Gen": "Быт", "Exod": "Исх", "Lev": "Лев", "Num": "Чис", "Deut": "Втор", "Josh": "Нав", "Judg": "Суд", "Ruth": "Руф",
+                            "1Sam": "1Цар", "2Sam": "2Цар", "1Kgs": "3Цар", "2Kgs": "4Цар", "1Chr": "1Пар", "2Chr": "2Пар", "Ezra": "Езд", "Neh": "Неем",
+                            "Esth": "Есф", "Job": "Иов", "Ps": "Пс", "Prov": "Прит", "Eccl": "Еккл", "Song": "Песн", "Isa": "Ис", "Jer": "Иер",
+                            "Lam": "Плач", "Ezek": "Иез", "Dan": "Дан", "Hos": "Ос", "Joel": "Иоил", "Amos": "Ам", "Obad": "Авд", "Jonah": "Ион",
+                            "Mic": "Мих", "Nah": "Наум", "Hab": "Авв", "Zeph": "Соф", "Hag": "Агг", "Zech": "Зах", "Mal": "Мал",
+                            "Matt": "Мф", "Mark": "Мк", "Luke": "Лк", "John": "Ин", "Acts": "Деян", "Jas": "Иак", "1Pet": "1Пет", "2Pet": "2Пет",
+                            "1John": "1Ин", "2John": "2Ин", "3John": "3Ин", "Jude": "Иуд", "Rom": "Рим", "1Cor": "1Кор", "2Cor": "2Кор",
+                            "Gal": "Гал", "Eph": "Еф", "Phil": "Флп", "Col": "Кол", "1Thess": "1Фес", "2Thess": "2Фес", "1Tim": "1Тим",
+                            "2Tim": "2Тим", "Titus": "Тит", "Phlm": "Флм", "Heb": "Евр", "Rev": "Откр"
+                        }
+                        for en, ru in en_to_ru.items():
+                            if ru == book_abbr:
+                                en_book = en
+                                break
+
+                        if en_book:
+                            verse_num = int(verse) if verse else 0
+                            buttons.append([
+                                InlineKeyboardButton(
+                                    text="Толкование проф. Лопухина",
+                                    callback_data=f"open_commentary_{en_book}_{chapter}_{verse_num}"
+                                )
+                            ])
+                            if ENABLE_GPT_EXPLAIN:
+                                buttons.append([
+                                    InlineKeyboardButton(
+                                        text="🤖 Разбор от ИИ",
+                                        callback_data=f"gpt_explain_{en_book}_{chapter}_{verse_num}"
+                                    )
+                                ])
+
+                    kb = InlineKeyboardMarkup(
+                        inline_keyboard=buttons) if buttons else None
+                else:
+                    kb = None
+                await callback.message.answer(part, parse_mode="HTML", reply_markup=kb)
+        await callback.answer()
+    # readingtext_plan_{plan_num}_{day}_{entry_idx} или readingtext_{plan_id}_{day}_{entry_idx}_{sub_idx}
+    elif len(parts) == 5:
+        if parts[1] == 'plan':  # readingtext_plan_{plan_num}_{day}_{entry_idx}
+            _, _, plan_num, day, entry_idx = parts
+            plan_id = f"plan_{plan_num}"
+            day = int(day)
+            entry_idx = int(entry_idx)
+            sub_idx = 0  # Нет sub_idx в этом случае
+        else:  # readingtext_{plan_id}_{day}_{entry_idx}_{sub_idx}
+            _, plan_id, day, entry_idx, sub_idx = parts
+            day = int(day)
+            entry_idx = int(entry_idx)
+            sub_idx = int(sub_idx)
+        logging.warning(
+            f"[reading_plan_text_subpart] callback_data={callback.data} plan_id={plan_id} day={day} entry_idx={entry_idx} sub_idx={sub_idx}")
+        from utils.reading_plans import reading_plans_manager
+        plan = reading_plans_manager.get_plan(plan_id)
+        entry = None
+        if plan:
+            day_reading = plan.get_day_reading(day)
+            if day_reading:
+                entries = [entry.strip()
+                           for entry in day_reading.split(';') if entry.strip()]
+                if entry_idx < len(entries):
+                    entry = entries[entry_idx]
+        logging.warning(f"[reading_plan_text_subpart] entry={entry}")
+        if not entry:
+            await callback.answer("Отрывок не найден")
+            return
+        subparts = [p.strip() for p in entry.split(';') if p.strip()]
+        logging.warning(f"[reading_plan_text_subpart] subparts={subparts}")
+        if sub_idx >= len(subparts):
+            await callback.answer("Отрывок не найден")
+            return
+        part = subparts[sub_idx]
+        logging.warning(f"[reading_plan_text_subpart] part={part}")
+        # Особая обработка Псалтырь3 и Псалтырь3-4
+        psalt_pattern = r'^(Псалтырь)\s*(\d+)(?:-(\d+))?$'
+        m_psalt = re.match(psalt_pattern, part)
+        if m_psalt:
+            book = m_psalt.group(1)
+            chapter_start = int(m_psalt.group(2))
+            chapter_end = int(m_psalt.group(3)) if m_psalt.group(
+                3) else chapter_start
+            queries = [f"{book} {ch}" for ch in range(
+                chapter_start, chapter_end+1)]
+        else:
+            queries = [part]
+        for q in queries:
+            logging.warning(
+                f"[reading_plan_text_subpart] get_verse_by_reference query={q}")
+            text, meta = await get_verse_by_reference(state, q)
+
+            # Проверяем, является ли это целой главой
+            match = re.match(r"([А-Яа-яёЁ0-9\s]+)\s(\d+)$", q.strip())
+            if match:
+                # Это целая глава - используем постраничный просмотр
+                book_raw = match.group(1).strip().lower()
+                chapter = int(match.group(2))
+                book_abbr = bible_data.normalize_book_name(book_raw)
+                book_id = bible_data.get_book_id(book_abbr)
+
+                if book_id:
+                    await show_chapter_page(callback, book_id, chapter, 0, state, is_new_chapter=True)
+                else:
+                    # Fallback к старому методу
+                    parts = list(split_text(text))
+                    for part in parts:
+                        await callback.message.answer(part, parse_mode="HTML")
+            else:
+                # Это стих или диапазон стихов - используем старый метод с кнопками
+                parts = list(split_text(text))
+                for idx, part in enumerate(parts):
+                    if idx == 0:
+                        # Создаем клавиатуру с кнопками толкования и ИИ для отрывка
+                        buttons = []
+                        # Попробуем извлечь информацию о книге и главе для кнопок толкования
+                        match = re.match(
+                            r"([А-Яа-яёЁ0-9\s]+)\s(\d+)(?::(\d+)(-\d+)?)?", q)
+                        if match:
+                            book_raw = match.group(1).strip().lower()
+                            chapter = int(match.group(2))
+                            verse = match.group(3)
+                            book_abbr = bible_data.normalize_book_name(
+                                book_raw)
+
+                            # Получаем английское сокращение для толкования
+                            en_book = None
+                            en_to_ru = {
+                                "Gen": "Быт", "Exod": "Исх", "Lev": "Лев", "Num": "Чис", "Deut": "Втор", "Josh": "Нав", "Judg": "Суд", "Ruth": "Руф",
+                                "1Sam": "1Цар", "2Sam": "2Цар", "1Kgs": "3Цар", "2Kgs": "4Цар", "1Chr": "1Пар", "2Chr": "2Пар", "Ezra": "Езд", "Neh": "Неем",
+                                "Esth": "Есф", "Job": "Иов", "Ps": "Пс", "Prov": "Прит", "Eccl": "Еккл", "Song": "Песн", "Isa": "Ис", "Jer": "Иер",
+                                "Lam": "Плач", "Ezek": "Иез", "Dan": "Дан", "Hos": "Ос", "Joel": "Иоил", "Amos": "Ам", "Obad": "Авд", "Jonah": "Ион",
+                                "Mic": "Мих", "Nah": "Наум", "Hab": "Авв", "Zeph": "Соф", "Hag": "Агг", "Zech": "Зах", "Mal": "Мал",
+                                "Matt": "Мф", "Mark": "Мк", "Luke": "Лк", "John": "Ин", "Acts": "Деян", "Jas": "Иак", "1Pet": "1Пет", "2Pet": "2Пет",
+                                "1John": "1Ин", "2John": "2Ин", "3John": "3Ин", "Jude": "Иуд", "Rom": "Рим", "1Cor": "1Кор", "2Cor": "2Кор",
+                                "Gal": "Гал", "Eph": "Еф", "Phil": "Флп", "Col": "Кол", "1Thess": "1Фес", "2Thess": "2Фес", "1Tim": "1Тим",
+                                "2Tim": "2Тим", "Titus": "Тит", "Phlm": "Флм", "Heb": "Евр", "Rev": "Откр"
+                            }
+                            for en, ru in en_to_ru.items():
+                                if ru == book_abbr:
+                                    en_book = en
+                                    break
+
+                            if en_book:
+                                verse_num = int(verse) if verse else 0
+                                buttons.append([
+                                    InlineKeyboardButton(
+                                        text="Толкование проф. Лопухина",
+                                        callback_data=f"open_commentary_{en_book}_{chapter}_{verse_num}"
+                                    )
+                                ])
+                                if ENABLE_GPT_EXPLAIN:
+                                    buttons.append([
+                                        InlineKeyboardButton(
+                                            text="🤖 Разбор от ИИ",
+                                            callback_data=f"gpt_explain_{en_book}_{chapter}_{verse_num}"
+                                        )
+                                    ])
+
+                        kb = InlineKeyboardMarkup(
+                            inline_keyboard=buttons) if buttons else None
+                    else:
+                        kb = None
+                    await callback.message.answer(part, parse_mode="HTML", reply_markup=kb)
+        await callback.answer()
+    # readingtext_plan_{plan_num}_{day}_{entry_idx}_{sub_idx}
+    elif len(parts) == 6:
+        _, _, plan_num, day, entry_idx, sub_idx = parts
+        plan_id = f"plan_{plan_num}"
+        day = int(day)
+        entry_idx = int(entry_idx)
+        sub_idx = int(sub_idx)
+        logging.warning(
+            f"[reading_plan_text_6parts] callback_data={callback.data} plan_id={plan_id} day={day} entry_idx={entry_idx} sub_idx={sub_idx}")
+        from utils.reading_plans import reading_plans_manager
+        plan = reading_plans_manager.get_plan(plan_id)
+        entry = None
+        if plan:
+            day_reading = plan.get_day_reading(day)
+            if day_reading:
+                entries = [entry.strip()
+                           for entry in day_reading.split(';') if entry.strip()]
+                if entry_idx < len(entries):
+                    entry = entries[entry_idx]
+        logging.warning(f"[reading_plan_text_6parts] entry={entry}")
+        if not entry:
+            await callback.answer("Отрывок не найден")
+            return
+        subparts = [p.strip() for p in entry.split(';') if p.strip()]
+        logging.warning(f"[reading_plan_text_6parts] subparts={subparts}")
+        if sub_idx >= len(subparts):
+            await callback.answer("Отрывок не найден")
+            return
+        part = subparts[sub_idx]
+        logging.warning(f"[reading_plan_text_6parts] part={part}")
+        # Особая обработка Псалтырь3 и Псалтырь3-4
+        psalt_pattern = r'^(Псалтырь)\s*(\d+)(?:-(\d+))?$'
+        m_psalt = re.match(psalt_pattern, part)
+        if m_psalt:
+            book = m_psalt.group(1)
+            chapter_start = int(m_psalt.group(2))
+            chapter_end = int(m_psalt.group(3)) if m_psalt.group(
+                3) else chapter_start
+            queries = [f"{book} {ch}" for ch in range(
+                chapter_start, chapter_end+1)]
+        else:
+            queries = [part]
+        for q in queries:
+            logging.warning(
+                f"[reading_plan_text_6parts] get_verse_by_reference query={q}")
+            text, meta = await get_verse_by_reference(state, q)
+
+            # Проверяем, является ли это целой главой
+            match = re.match(r"([А-Яа-яёЁ0-9\s]+)\s(\d+)$", q.strip())
+            if match:
+                # Это целая глава - используем постраничный просмотр
+                book_raw = match.group(1).strip().lower()
+                chapter = int(match.group(2))
+                book_abbr = bible_data.normalize_book_name(book_raw)
+                book_id = bible_data.get_book_id(book_abbr)
+
+                if book_id:
+                    await show_chapter_page(callback, book_id, chapter, 0, state, is_new_chapter=True)
+                else:
+                    # Fallback к старому методу
+                    parts = list(split_text(text))
+                    for part in parts:
+                        await callback.message.answer(part, parse_mode="HTML")
+            else:
+                # Это стих или диапазон стихов - используем старый метод с кнопками
+                parts = list(split_text(text))
+                for idx, part in enumerate(parts):
+                    if idx == 0:
+                        # Создаем клавиатуру с кнопками толкования и ИИ для отрывка
+                        buttons = []
+                        # Попробуем извлечь информацию о книге и главе для кнопок толкования
+                        match = re.match(
+                            r"([А-Яа-яёЁ0-9\s]+)\s(\d+)(?::(\d+)(-\d+)?)?", q)
+                        if match:
+                            book_raw = match.group(1).strip().lower()
+                            chapter = int(match.group(2))
+                            verse = match.group(3)
+                            book_abbr = bible_data.normalize_book_name(
+                                book_raw)
+
+                            # Получаем английское сокращение для толкования
+                            en_book = None
+                            en_to_ru = {
+                                "Gen": "Быт", "Exod": "Исх", "Lev": "Лев", "Num": "Чис", "Deut": "Втор", "Josh": "Нав", "Judg": "Суд", "Ruth": "Руф",
+                                "1Sam": "1Цар", "2Sam": "2Цар", "1Kgs": "3Цар", "2Kgs": "4Цар", "1Chr": "1Пар", "2Chr": "2Пар", "Ezra": "Езд", "Neh": "Неем",
+                                "Esth": "Есф", "Job": "Иов", "Ps": "Пс", "Prov": "Прит", "Eccl": "Еккл", "Song": "Песн", "Isa": "Ис", "Jer": "Иер",
+                                "Lam": "Плач", "Ezek": "Иез", "Dan": "Дан", "Hos": "Ос", "Joel": "Иоил", "Amos": "Ам", "Obad": "Авд", "Jonah": "Ион",
+                                "Mic": "Мих", "Nah": "Наум", "Hab": "Авв", "Zeph": "Соф", "Hag": "Агг", "Zech": "Зах", "Mal": "Мал",
+                                "Matt": "Мф", "Mark": "Мк", "Luke": "Лк", "John": "Ин", "Acts": "Деян", "Jas": "Иак", "1Pet": "1Пет", "2Pet": "2Пет",
+                                "1John": "1Ин", "2John": "2Ин", "3John": "3Ин", "Jude": "Иуд", "Rom": "Рим", "1Cor": "1Кор", "2Cor": "2Кор",
+                                "Gal": "Гал", "Eph": "Еф", "Phil": "Флп", "Col": "Кол", "1Thess": "1Фес", "2Thess": "2Фес", "1Tim": "1Тим",
+                                "2Tim": "2Тим", "Titus": "Тит", "Phlm": "Флм", "Heb": "Евр", "Rev": "Откр"
+                            }
+                            for en, ru in en_to_ru.items():
+                                if ru == book_abbr:
+                                    en_book = en
+                                    break
+
+                            if en_book:
+                                verse_num = int(verse) if verse else 0
+                                buttons.append([
+                                    InlineKeyboardButton(
+                                        text="Толкование проф. Лопухина",
+                                        callback_data=f"open_commentary_{en_book}_{chapter}_{verse_num}"
+                                    )
+                                ])
+                                if ENABLE_GPT_EXPLAIN:
+                                    buttons.append([
+                                        InlineKeyboardButton(
+                                            text="🤖 Разбор от ИИ",
+                                            callback_data=f"gpt_explain_{en_book}_{chapter}_{verse_num}"
+                                        )
+                                    ])
+
+                        kb = InlineKeyboardMarkup(
+                            inline_keyboard=buttons) if buttons else None
+                    else:
+                        kb = None
+                    await callback.message.answer(part, parse_mode="HTML", reply_markup=kb)
+        await callback.answer()
+
+
+# --- Обработчики для тестирования и отладки ---
+@router.message(F.text == "/debug")
+async def debug_command(message: Message, state: FSMContext):
+    """Команда для отладки и тестирования"""
+    user_id = message.from_user.id
+    await message.answer(f"Ваш ID: {user_id}\n\nТекущие данные состояния:\n{await state.get_data()}")
+
+
+# --- Постраничный просмотр глав ---
+async def show_chapter_page(callback_or_message, book_id, chapter, page_idx, state=None, is_new_chapter=False):
+    """
+    Показывает страницу главы с навигацией
+
+    Args:
+        callback_or_message: CallbackQuery или Message объект
+        book_id: ID книги
+        chapter: номер главы
+        page_idx: индекс страницы (начиная с 0)
+        state: FSMContext для сохранения состояния
+        is_new_chapter: True если это новая глава (не навигация по страницам)
+    """
+    from utils.bible_data import bible_data
+    from middleware.state import get_current_translation
+
+    logger.info(
+        f"[show_chapter_page] Вызвана для book_id={book_id}, chapter={chapter}, page_idx={page_idx}")
+
+    # Получаем текст главы
+    translation = await get_current_translation(state) if state else "rst"
+    text = await bible_api.get_formatted_chapter(book_id, chapter, translation)
+
+    logger.info(
+        f"[show_chapter_page] Получен текст длиной {len(text)} символов")
+    logger.info(
+        f"[show_chapter_page] Первые 200 символов: {repr(text[:200])}")
+
+    if text.startswith("Ошибка:"):
+        if hasattr(callback_or_message, 'answer'):
+            await callback_or_message.answer("Ошибка при загрузке главы")
+        else:
+            await callback_or_message.answer("Ошибка при загрузке главы")
+        return
+
+    book_name = bible_data.get_book_name(book_id)
+
+    # Проверяем, начинается ли текст с заголовка книги
+    # Если да, то отделяем заголовок от основного текста
+    header_pattern = r'^([^.]+\.[^:]+:)\n\n(.*)$'
+    match = re.match(header_pattern, text, re.DOTALL)
+    logger.info(
+        f"[show_chapter_page] Проверяем заголовок с паттерном: {header_pattern}")
+    logger.info(f"[show_chapter_page] Результат match: {match is not None}")
+
+    if match:
+        # Есть заголовок в тексте - отделяем его
+        text_header = match.group(1)  # "Новый завет. Марк 6:"
+        main_text = match.group(2)    # Основной текст без заголовка
+        logger.info(
+            f"[show_chapter_page] Найден заголовок в тексте: '{text_header}'")
+    else:
+        # Нет заголовка в тексте
+        text_header = ""
+        main_text = text
+        logger.info(f"[show_chapter_page] Заголовок в тексте не найден")
+
+    # Разбиваем основной текст на страницы, оставляя место для заголовков
+    max_length_for_split = MESS_MAX_LENGTH - 300  # оставляем место для заголовков
+    logger.info(
+        f"[show_chapter_page] Разбиваем основной текст с max_length={max_length_for_split}")
+
+    pages = list(split_text(main_text, max_length_for_split))
+    total_pages = len(pages)
+
+    logger.info(f"[show_chapter_page] Получено {total_pages} страниц")
+    for i, page in enumerate(pages):
+        logger.info(
+            f"[show_chapter_page] Страница {i+1}: {len(page)} символов")
+
+    if page_idx >= total_pages:
+        page_idx = total_pages - 1
+    if page_idx < 0:
+        page_idx = 0
+
+    current_page = pages[page_idx]
+    logger.info(
+        f"[show_chapter_page] Выбрана страница {page_idx + 1}, длина: {len(current_page)}")
+
+    # Формируем заголовок страницы
+    if total_pages > 1:
+        header = f"<b>{book_name}, глава {chapter} (стр. {page_idx + 1} из {total_pages})</b>\n\n"
+    else:
+        header = f"<b>{book_name}, глава {chapter}</b>\n\n"
+
+    # Если есть заголовок в тексте и это первая страница, добавляем его
+    if text_header and page_idx == 0:
+        header += f"{text_header}\n\n"
+
+    logger.info(
+        f"[show_chapter_page] Итоговый заголовок: '{header}', длина: {len(header)}")
+
+    # Создаем кнопки навигации по страницам
+    nav_buttons = []
+    if page_idx > 0:
+        nav_buttons.append(InlineKeyboardButton(
+            text="⬅️ Пред. стр.",
+            callback_data=f"chapter_page_{book_id}_{chapter}_{page_idx-1}"
+        ))
+    if page_idx < total_pages - 1:
+        nav_buttons.append(InlineKeyboardButton(
+            text="След. стр. ➡️",
+            callback_data=f"chapter_page_{book_id}_{chapter}_{page_idx+1}"
+        ))
+
+    # Кнопки толкований и ИИ (только на последней странице)
+    extra_buttons = []
+    if page_idx == total_pages - 1:  # Последняя страница
+        # Получаем английское сокращение для толкования
+        book_abbr = None
+        for abbr, id_ in bible_data.book_abbr_dict.items():
+            if id_ == book_id:
+                book_abbr = abbr
+                break
+
+        if book_abbr:
+            en_book = None
+            en_to_ru = {
+                "Gen": "Быт", "Exod": "Исх", "Lev": "Лев", "Num": "Чис", "Deut": "Втор", "Josh": "Нав", "Judg": "Суд", "Ruth": "Руф",
+                "1Sam": "1Цар", "2Sam": "2Цар", "1Kgs": "3Цар", "2Kgs": "4Цар", "1Chr": "1Пар", "2Chr": "2Пар", "Ezra": "Езд", "Neh": "Неем",
+                "Esth": "Есф", "Job": "Иов", "Ps": "Пс", "Prov": "Прит", "Eccl": "Еккл", "Song": "Песн", "Isa": "Ис", "Jer": "Иер",
+                "Lam": "Плач", "Ezek": "Иез", "Dan": "Дан", "Hos": "Ос", "Joel": "Иоил", "Amos": "Ам", "Obad": "Авд", "Jonah": "Ион",
+                "Mic": "Мих", "Nah": "Наум", "Hab": "Авв", "Zeph": "Соф", "Hag": "Агг", "Zech": "Зах", "Mal": "Мал",
+                "Matt": "Мф", "Mark": "Мк", "Luke": "Лк", "John": "Ин", "Acts": "Деян", "Jas": "Иак", "1Pet": "1Пет", "2Pet": "2Пет",
+                "1John": "1Ин", "2John": "2Ин", "3John": "3Ин", "Jude": "Иуд", "Rom": "Рим", "1Cor": "1Кор", "2Cor": "2Кор",
+                "Gal": "Гал", "Eph": "Еф", "Phil": "Флп", "Col": "Кол", "1Thess": "1Фес", "2Thess": "2Фес", "1Tim": "1Тим",
+                "2Tim": "2Тим", "Titus": "Тит", "Phlm": "Флм", "Heb": "Евр", "Rev": "Откр"
+            }
+            for en, ru in en_to_ru.items():
+                if ru == book_abbr:
+                    en_book = en
+                    break
+
+            if en_book:
+                extra_buttons.append([
+                    InlineKeyboardButton(
+                        text="Толкование проф. Лопухина",
+                        callback_data=f"open_commentary_{en_book}_{chapter}_0"
+                    )
+                ])
+                if ENABLE_GPT_EXPLAIN:
+                    extra_buttons.append([
+                        InlineKeyboardButton(
+                            text="🤖 Разбор от ИИ",
+                            callback_data=f"gpt_explain_{en_book}_{chapter}_0"
+                        )
+                    ])
+
+    # Формируем клавиатуру
+    keyboard_rows = []
+    if nav_buttons:
+        keyboard_rows.append(nav_buttons)
+    keyboard_rows.extend(extra_buttons)
+
+    markup = InlineKeyboardMarkup(
+        inline_keyboard=keyboard_rows) if keyboard_rows else None
+
+    # Объединяем заголовок и текст
+    full_text = header + current_page
+    logger.info(
+        f"[show_chapter_page] Итоговый текст: {len(full_text)} символов")
+
+    # Проверяем, что итоговое сообщение не превышает лимит Telegram
+    if len(full_text) > MESS_MAX_LENGTH:
+        logger.warning(
+            f"[show_chapter_page] Превышен лимит! {len(full_text)} > {MESS_MAX_LENGTH}")
+        # Если превышает, урезаем текст страницы
+        available_length = MESS_MAX_LENGTH - \
+            len(header) - 50  # оставляем запас
+        if available_length > 100:  # минимальная длина для текста
+            current_page = current_page[:available_length] + "..."
+            full_text = header + current_page
+            logger.info(
+                f"[show_chapter_page] Урезан текст страницы, новая длина: {len(full_text)}")
+        else:
+            # Если заголовок слишком длинный, упрощаем его
+            header = f"<b>{book_name} {chapter}</b>\n\n"
+            available_length = MESS_MAX_LENGTH - len(header) - 50
+            current_page = current_page[:available_length] + "..."
+            full_text = header + current_page
+            logger.info(
+                f"[show_chapter_page] Упрощен заголовок, новая длина: {len(full_text)}")
+    else:
+        logger.info(f"[show_chapter_page] Длина в пределах нормы")
+
+    if hasattr(callback_or_message, 'message'):  # CallbackQuery
+        if is_new_chapter:
+            # Новая глава - отправляем новое сообщение
+            msg = await callback_or_message.message.answer(full_text, parse_mode="HTML", reply_markup=markup)
+        else:
+            # Навигация по страницам - редактируем существующее
+            try:
+                await callback_or_message.message.edit_text(full_text, parse_mode="HTML", reply_markup=markup)
+            except Exception:
+                # Если не удалось отредактировать, отправляем новое
+                msg = await callback_or_message.message.answer(full_text, parse_mode="HTML", reply_markup=markup)
+    else:  # Message
+        msg = await callback_or_message.answer(full_text, parse_mode="HTML", reply_markup=markup)
+
+    # Сохраняем информацию о текущей странице в state
+    if state:
+        await state.update_data(
+            current_chapter_book_id=book_id,
+            current_chapter_number=chapter,
+            current_chapter_page=page_idx,
+            current_chapter_total_pages=total_pages
+        )
+
+
+@router.callback_query(F.data.regexp(r'^chapter_page_(\d+)_(\d+)_(\d+)$'))
+async def chapter_page_callback(callback: CallbackQuery, state: FSMContext = None):
+    """Обработчик навигации по страницам главы"""
+    await callback.answer()
+
+    match = re.match(r'^chapter_page_(\d+)_(\d+)_(\d+)$', callback.data)
+    if not match:
+        await callback.message.answer("Ошибка запроса")
+        return
+
+    book_id = int(match.group(1))
+    chapter = int(match.group(2))
+    page_idx = int(match.group(3))
+
+    await show_chapter_page(callback, book_id, chapter, page_idx, state, is_new_chapter=False)
+
+
+@router.message(F.text == "/test_split")
+async def test_split_command(message: Message, state: FSMContext):
+    """Тестовая команда для отладки функции split_text"""
+    try:
+        # Создаем тестовый текст
+        test_text = "Новый завет. Марк 6:\n\n1 И вышел оттуда и пришел в отечество Свое; за Ним следовали ученики Его.\n2 Когда наступила суббота, Он начал учить в синагоге; и многие слышавшие с изумлением говорили: откуда у Него это? что за премудрость дана Ему, и как такие чудеса совершаются руками Его?\n3 Не плотник ли Он, сын Марии, брат Иакова, Иосии, Иуды и Симона? Не здесь ли, между нами, Его сестры? И соблазнялись о Нем."
+
+        await message.answer(f"MESS_MAX_LENGTH = {MESS_MAX_LENGTH}")
+        await message.answer(f"Длина тестового текста: {len(test_text)}")
+
+        # Тестируем с разными параметрами
+        max_length_for_split = MESS_MAX_LENGTH - 200
+        await message.answer(f"max_length_for_split = {max_length_for_split}")
+
+        pages = list(split_text(test_text, max_length_for_split))
+        await message.answer(f"Получено {len(pages)} страниц")
+
+        for i, page in enumerate(pages):
+            await message.answer(f"Страница {i+1}: {len(page)} символов\nСодержимое: {page[:100]}...")
+
+        # Тестируем заголовок
+        header = "<b>Евангелие от Марка, глава 6</b>\n\n"
+        await message.answer(f"Заголовок: {len(header)} символов")
+
+        # Тестируем объединение
+        if pages:
+            full_text = header + pages[0]
+            await message.answer(f"Полный текст первой страницы: {len(full_text)} символов")
+
+    except Exception as e:
+        await message.answer(f"Ошибка в тесте: {e}")
+        logger.error(f"Ошибка в тесте split_text: {e}", exc_info=True)

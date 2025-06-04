@@ -15,7 +15,7 @@ from aiogram.fsm.context import FSMContext
 
 from config import settings
 from handlers import (
-    commands, text_messages, callbacks, bookmarks, bookmark_callbacks
+    commands, text_messages, callbacks, bookmarks, bookmark_callbacks, reading_plans, admin
 )
 from middleware.state import StateMiddleware
 from middleware.db_middleware import DatabaseMiddleware
@@ -106,11 +106,13 @@ async def main() -> None:
     logger.info("Middleware для передачи объекта БД зарегистрирован")
 
     # Регистрируем роутеры с обработчиками
+    dp.include_router(admin.admin_router)  # Административные команды первыми
     dp.include_router(commands.router)
     dp.include_router(text_messages.router)
     dp.include_router(callbacks.router)
     dp.include_router(bookmarks.router)
     dp.include_router(bookmark_callbacks.router)
+    dp.include_router(reading_plans.router)
 
     # Запускаем бота
     try:

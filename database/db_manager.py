@@ -97,9 +97,36 @@ class DatabaseManager:
             )
             ''')
 
+            # Таблица прогресса чтения
+            logger.info("Создание/проверка таблицы reading_progress")
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS reading_progress (
+                user_id INTEGER,
+                plan_id TEXT,
+                day INTEGER,
+                completed INTEGER DEFAULT 0,
+                completed_at TIMESTAMP,
+                PRIMARY KEY (user_id, plan_id, day)
+            )
+            ''')
+
+            # Таблица выбранных планов пользователей
+            logger.info("Создание/проверка таблицы user_reading_plans")
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS user_reading_plans (
+                user_id INTEGER,
+                plan_id TEXT,
+                current_day INTEGER DEFAULT 1,
+                started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_read_at TIMESTAMP,
+                PRIMARY KEY (user_id, plan_id),
+                FOREIGN KEY (user_id) REFERENCES users (user_id)
+            )
+            ''')
+
             # Проверяем, созданы ли таблицы
             cursor.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND (name='users' OR name='bookmarks' OR name='ai_limits')")
+                "SELECT name FROM sqlite_master WHERE type='table' AND (name='users' OR name='bookmarks' OR name='ai_limits' OR name='reading_progress' OR name='user_reading_plans')")
             tables = cursor.fetchall()
             logger.info(f"Проверка созданных таблиц: {tables}")
 
@@ -117,14 +144,14 @@ class DatabaseManager:
 
             # Проверим, что таблицы действительно созданы
             cursor.execute(
-                "SELECT COUNT(name) FROM sqlite_master WHERE type='table' AND (name='users' OR name='bookmarks' OR name='ai_limits')")
+                "SELECT COUNT(name) FROM sqlite_master WHERE type='table' AND (name='users' OR name='bookmarks' OR name='ai_limits' OR name='reading_progress' OR name='user_reading_plans')")
             table_count = cursor.fetchone()[0]
-            if table_count == 3:
+            if table_count == 5:
                 logger.info(
-                    "Все таблицы (users, bookmarks и ai_limits) успешно созданы")
+                    "Все таблицы (users, bookmarks, ai_limits, reading_progress и user_reading_plans) успешно созданы")
             else:
                 logger.warning(
-                    f"Не все таблицы созданы. Найдено таблиц: {table_count}/3")
+                    f"Не все таблицы созданы. Найдено таблиц: {table_count}/5")
 
         except Exception as e:
             logger.error(
@@ -730,11 +757,21 @@ class DatabaseManager:
                 PRIMARY KEY (user_id, date)
             )''')
 
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS reading_progress (
+                user_id INTEGER,
+                plan_id TEXT,
+                day INTEGER,
+                completed INTEGER DEFAULT 0,
+                completed_at TIMESTAMP,
+                PRIMARY KEY (user_id, plan_id, day)
+            )''')
+
             conn.commit()
             conn.close()
 
             result["actions"].append(
-                "Созданы новые таблицы users, bookmarks и ai_limits")
+                "Созданы новые таблицы users, bookmarks, ai_limits и reading_progress")
             result["success"] = True
             return result
 
@@ -815,7 +852,378 @@ class DatabaseManager:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, _execute)
 
+    def mark_reading_day_completed(self, user_id: int, plan_id: str, day: int):
+        """Отметить день плана как прочитанный пользователем."""
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT OR REPLACE INTO reading_progress (user_id, plan_id, day, completed, completed_at)
+            VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP)
+        ''', (user_id, plan_id, day))
+        conn.commit()
+        conn.close()
+
+    def is_reading_day_completed(self, user_id: int, plan_id: str, day: int) -> bool:
+        """Проверить, отмечен ли день как прочитанный."""
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT completed FROM reading_progress WHERE user_id=? AND plan_id=? AND day=?
+        ''', (user_id, plan_id, day))
+        row = cursor.fetchone()
+        conn.close()
+        return bool(row and row[0])
+
+    def get_reading_progress(self, user_id: int, plan_id: str) -> list:
+        """Получить список всех отмеченных дней для пользователя и плана."""
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT day FROM reading_progress WHERE user_id=? AND plan_id=? AND completed=1
+        ''', (user_id, plan_id))
+        days = [row[0] for row in cursor.fetchall()]
+        conn.close()
+        return days
+
+    async def set_user_reading_plan(self, user_id: int, plan_id: str, current_day: int = 1) -> None:
+        """
+        Устанавливает активный план чтения для пользователя
+
+        Args:
+            user_id: ID пользователя
+            plan_id: ID плана чтения
+            current_day: текущий день плана (по умолчанию 1)
+        """
+        def _execute():
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            now = datetime.now()
+
+            cursor.execute('''
+                INSERT OR REPLACE INTO user_reading_plans 
+                (user_id, plan_id, current_day, started_at, last_read_at)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (user_id, plan_id, current_day, now, now))
+
+            conn.commit()
+            conn.close()
+
+        await asyncio.to_thread(_execute)
+
+    async def get_user_reading_plan(self, user_id: int, plan_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Получает информацию о плане чтения пользователя
+
+        Args:
+            user_id: ID пользователя
+            plan_id: ID плана чтения
+
+        Returns:
+            Словарь с информацией о плане или None
+        """
+        def _execute():
+            conn = sqlite3.connect(self.db_file)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+
+            cursor.execute('''
+                SELECT * FROM user_reading_plans 
+                WHERE user_id = ? AND plan_id = ?
+            ''', (user_id, plan_id))
+
+            result = cursor.fetchone()
+            conn.close()
+            return dict(result) if result else None
+
+        return await asyncio.to_thread(_execute)
+
+    async def get_user_reading_plans(self, user_id: int) -> List[Dict[str, Any]]:
+        """
+        Получает все планы чтения пользователя
+
+        Args:
+            user_id: ID пользователя
+
+        Returns:
+            Список словарей с информацией о планах
+        """
+        def _execute():
+            conn = sqlite3.connect(self.db_file)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+
+            cursor.execute('''
+                SELECT * FROM user_reading_plans 
+                WHERE user_id = ?
+                ORDER BY last_read_at DESC
+            ''', (user_id,))
+
+            results = cursor.fetchall()
+            conn.close()
+            return [dict(row) for row in results]
+
+        return await asyncio.to_thread(_execute)
+
+    async def update_reading_plan_day(self, user_id: int, plan_id: str, new_day: int) -> None:
+        """
+        Обновляет текущий день плана чтения
+
+        Args:
+            user_id: ID пользователя
+            plan_id: ID плана чтения
+            new_day: новый текущий день
+        """
+        def _execute():
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            now = datetime.now()
+
+            cursor.execute('''
+                UPDATE user_reading_plans 
+                SET current_day = ?, last_read_at = ?
+                WHERE user_id = ? AND plan_id = ?
+            ''', (new_day, now, user_id, plan_id))
+
+            conn.commit()
+            conn.close()
+
+        await asyncio.to_thread(_execute)
+
+    async def mark_reading_day_completed_async(self, user_id: int, plan_id: str, day: int) -> None:
+        """
+        Асинхронная версия отметки дня как прочитанного
+
+        Args:
+            user_id: ID пользователя
+            plan_id: ID плана чтения
+            day: номер дня
+        """
+        def _execute():
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+
+            cursor.execute('''
+                INSERT OR REPLACE INTO reading_progress 
+                (user_id, plan_id, day, completed, completed_at)
+                VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP)
+            ''', (user_id, plan_id, day))
+
+            conn.commit()
+            conn.close()
+
+        await asyncio.to_thread(_execute)
+
+    async def is_reading_day_completed_async(self, user_id: int, plan_id: str, day: int) -> bool:
+        """
+        Асинхронная версия проверки, прочитан ли день
+
+        Args:
+            user_id: ID пользователя
+            plan_id: ID плана чтения
+            day: номер дня
+
+        Returns:
+            True если день прочитан, False иначе
+        """
+        def _execute():
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+
+            cursor.execute('''
+                SELECT completed FROM reading_progress 
+                WHERE user_id=? AND plan_id=? AND day=?
+            ''', (user_id, plan_id, day))
+
+            row = cursor.fetchone()
+            conn.close()
+            return bool(row and row[0])
+
+        return await asyncio.to_thread(_execute)
+
+    async def get_reading_progress_async(self, user_id: int, plan_id: str) -> List[int]:
+        """
+        Асинхронная версия получения прогресса чтения
+
+        Args:
+            user_id: ID пользователя
+            plan_id: ID плана чтения
+
+        Returns:
+            Список номеров прочитанных дней
+        """
+        def _execute():
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+
+            cursor.execute('''
+                SELECT day FROM reading_progress 
+                WHERE user_id=? AND plan_id=? AND completed=1
+                ORDER BY day
+            ''', (user_id, plan_id))
+
+            days = [row[0] for row in cursor.fetchall()]
+            conn.close()
+            return days
+
+        return await asyncio.to_thread(_execute)
+
+    async def remove_user_reading_plan(self, user_id: int, plan_id: str) -> None:
+        """
+        Удаляет план чтения пользователя
+
+        Args:
+            user_id: ID пользователя
+            plan_id: ID плана чтения
+        """
+        def _execute():
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+
+            # Удаляем план пользователя
+            cursor.execute('''
+                DELETE FROM user_reading_plans 
+                WHERE user_id = ? AND plan_id = ?
+            ''', (user_id, plan_id))
+
+            # Удаляем прогресс чтения по этому плану
+            cursor.execute('''
+                DELETE FROM reading_progress 
+                WHERE user_id = ? AND plan_id = ?
+            ''', (user_id, plan_id))
+
+            conn.commit()
+            conn.close()
+
+        await asyncio.to_thread(_execute)
+
+    async def is_bookmark_exists(self, user_id: int, reference: str) -> bool:
+        """
+        Проверяет, существует ли закладка по ссылке (упрощенная проверка).
+        """
+        def _execute():
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT COUNT(*) FROM bookmarks WHERE user_id = ? AND display_text LIKE ?",
+                (user_id, f"%{reference}%")
+            )
+            count = cursor.fetchone()[0]
+            conn.close()
+            return count > 0
+
+        return await asyncio.to_thread(_execute)
+
+    async def is_bookmark_exists_detailed(self, user_id: int, book_id: int, chapter: int,
+                                          verse_start: int = None, verse_end: int = None) -> bool:
+        """
+        Проверяет, существует ли закладка по детальным параметрам.
+        """
+        def _execute():
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+
+            # Базовый запрос по книге и главе
+            query = "SELECT COUNT(*) FROM bookmarks WHERE user_id = ? AND book_id = ? AND chapter = ?"
+            params = [user_id, book_id, chapter]
+
+            # Если указаны стихи, добавляем их в проверку через display_text
+            if verse_start is not None:
+                if verse_end is not None and verse_end != verse_start:
+                    # Диапазон стихов
+                    query += " AND (display_text LIKE ? OR display_text LIKE ?)"
+                    params.extend(
+                        [f"%:{verse_start}-%", f"%:{verse_start}-{verse_end}%"])
+                else:
+                    # Один стих
+                    query += " AND display_text LIKE ?"
+                    params.append(f"%:{verse_start}%")
+
+            cursor.execute(query, params)
+            count = cursor.fetchone()[0]
+            conn.close()
+            return count > 0
+
+        return await asyncio.to_thread(_execute)
+
+    async def add_bookmark_detailed(self, user_id: int, book_id: int, chapter: int,
+                                    verse_start: int = None, verse_end: int = None, note: str = "") -> bool:
+        """
+        Добавляет закладку с поддержкой стихов.
+        """
+        def _execute():
+            try:
+                conn = sqlite3.connect(self.db_file)
+                cursor = conn.cursor()
+
+                # Формируем display_text
+                from utils.bible_data import bible_data
+                book_name = bible_data.get_book_name(book_id)
+
+                if verse_start is not None:
+                    if verse_end is not None and verse_end != verse_start:
+                        display_text = f"{book_name} {chapter}:{verse_start}-{verse_end}"
+                    else:
+                        display_text = f"{book_name} {chapter}:{verse_start}"
+                else:
+                    display_text = f"{book_name} {chapter}"
+
+                if note:
+                    display_text += f" ({note})"
+
+                cursor.execute('''
+                    INSERT INTO bookmarks (user_id, book_id, chapter, display_text, created_at)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (user_id, book_id, chapter, display_text, datetime.now()))
+
+                conn.commit()
+                conn.close()
+                return True
+
+            except Exception as e:
+                logger.error(f"Ошибка при добавлении закладки: {e}")
+                if conn:
+                    conn.close()
+                return False
+
+        return await asyncio.to_thread(_execute)
+
+    async def remove_bookmark_detailed(self, user_id: int, book_id: int, chapter: int,
+                                       verse_start: int = None, verse_end: int = None) -> bool:
+        """
+        Удаляет закладку с поддержкой стихов.
+        """
+        def _execute():
+            try:
+                conn = sqlite3.connect(self.db_file)
+                cursor = conn.cursor()
+
+                # Базовый запрос
+                query = "DELETE FROM bookmarks WHERE user_id = ? AND book_id = ? AND chapter = ?"
+                params = [user_id, book_id, chapter]
+
+                # Если указаны стихи, уточняем поиск
+                if verse_start is not None:
+                    if verse_end is not None and verse_end != verse_start:
+                        query += " AND (display_text LIKE ? OR display_text LIKE ?)"
+                        params.extend(
+                            [f"%:{verse_start}-%", f"%:{verse_start}-{verse_end}%"])
+                    else:
+                        query += " AND display_text LIKE ?"
+                        params.append(f"%:{verse_start}%")
+
+                cursor.execute(query, params)
+                conn.commit()
+                conn.close()
+                return True
+
+            except Exception as e:
+                logger.error(f"Ошибка при удалении закладки: {e}")
+                if conn:
+                    conn.close()
+                return False
+
+        return await asyncio.to_thread(_execute)
+
+
 # Глобальный экземпляр менеджера БД
-
-
 db_manager = DatabaseManager()

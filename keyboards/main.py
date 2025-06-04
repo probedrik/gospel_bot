@@ -21,12 +21,12 @@ def get_main_keyboard() -> ReplyKeyboardMarkup:
             KeyboardButton(text="🔍 Найти стих"),
         ],
         [
+            KeyboardButton(text="📅 Планы чтения"),
             KeyboardButton(text="📝 Мои закладки"),
-            KeyboardButton(text="📚 Темы"),
         ],
         [
+            KeyboardButton(text="📚 Темы"),
             KeyboardButton(text="❓ Помощь"),
-            KeyboardButton(text="📊 Случайный стих"),
         ]
     ]
 
@@ -277,5 +277,306 @@ def create_bookmarks_keyboard(bookmarks) -> InlineKeyboardMarkup:
             callback_data="back_to_menu"
         )
     ])
+
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def create_reading_plans_keyboard() -> InlineKeyboardMarkup:
+    """Создает клавиатуру для выбора планов чтения"""
+    from services.reading_plans import reading_plans_service
+
+    buttons = []
+
+    # Получаем все доступные планы
+    plans = reading_plans_service.get_all_plans()
+
+    for plan in plans:
+        buttons.append([
+            InlineKeyboardButton(
+                text=f"📅 {plan.title} ({plan.total_days} дней)",
+                callback_data=f"select_plan_{plan.plan_id}"
+            )
+        ])
+
+    # Кнопка для просмотра активных планов пользователя
+    buttons.append([
+        InlineKeyboardButton(
+            text="📋 Мои активные планы",
+            callback_data="my_reading_plans"
+        )
+    ])
+
+    # Возврат в меню
+    buttons.append([
+        InlineKeyboardButton(
+            text="🏠 Вернуться в меню",
+            callback_data="back_to_menu"
+        )
+    ])
+
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def create_plan_day_keyboard(plan_id: str, day: int, is_completed: bool = False,
+                             has_previous: bool = False, has_next: bool = False,
+                             references: list = None) -> InlineKeyboardMarkup:
+    """
+    Создает клавиатуру для дня плана чтения
+
+    Args:
+        plan_id: ID плана чтения
+        day: номер дня
+        is_completed: отмечен ли день как прочитанный
+        has_previous: есть ли предыдущий день
+        has_next: есть ли следующий день
+        references: список отрывков для чтения
+    """
+    buttons = []
+
+    # Кнопки для отрывков чтения
+    if references:
+        for i, ref in enumerate(references):
+            # Ограничиваем длину текста кнопки
+            button_text = ref if len(ref) <= 30 else ref[:27] + "..."
+            buttons.append([
+                InlineKeyboardButton(
+                    text=f"📖 {i+1}. {button_text}",
+                    callback_data=f"reading_ref_{plan_id}_{day}_{i}"
+                )
+            ])
+
+    # Кнопки навигации по дням
+    nav_buttons = []
+    if has_previous:
+        nav_buttons.append(
+            InlineKeyboardButton(
+                text="⬅️ Предыдущий день",
+                callback_data=f"plan_day_{plan_id}_{day-1}"
+            )
+        )
+
+    if has_next:
+        nav_buttons.append(
+            InlineKeyboardButton(
+                text="➡️ Следующий день",
+                callback_data=f"plan_day_{plan_id}_{day+1}"
+            )
+        )
+
+    if nav_buttons:
+        buttons.append(nav_buttons)
+
+    # Кнопка отметки как прочитанного
+    if is_completed:
+        buttons.append([
+            InlineKeyboardButton(
+                text="✅ Прочитано",
+                callback_data=f"unmark_day_{plan_id}_{day}"
+            )
+        ])
+    else:
+        buttons.append([
+            InlineKeyboardButton(
+                text="📖 Отметить как прочитанное",
+                callback_data=f"mark_day_{plan_id}_{day}"
+            )
+        ])
+
+    # Кнопка возврата к плану
+    buttons.append([
+        InlineKeyboardButton(
+            text="📋 Вернуться к плану",
+            callback_data=f"view_plan_{plan_id}"
+        )
+    ])
+
+    # Возврат в меню планов
+    buttons.append([
+        InlineKeyboardButton(
+            text="📅 Планы чтения",
+            callback_data="reading_plans"
+        )
+    ])
+
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def create_plan_overview_keyboard(plan_id: str, current_day: int = 1) -> InlineKeyboardMarkup:
+    """
+    Создает клавиатуру для обзора плана чтения
+
+    Args:
+        plan_id: ID плана чтения
+        current_day: текущий день плана
+    """
+    buttons = []
+
+    # Кнопка текущего дня
+    buttons.append([
+        InlineKeyboardButton(
+            text=f"📖 День {current_day} (текущий)",
+            callback_data=f"plan_day_{plan_id}_{current_day}"
+        )
+    ])
+
+    # Кнопка прогресса
+    buttons.append([
+        InlineKeyboardButton(
+            text="📊 Показать прогресс",
+            callback_data=f"plan_progress_{plan_id}"
+        )
+    ])
+
+    # Кнопка выбора дня
+    buttons.append([
+        InlineKeyboardButton(
+            text="📅 Выбрать день",
+            callback_data=f"plan_select_day_{plan_id}"
+        )
+    ])
+
+    # Кнопка очистки прогресса
+    buttons.append([
+        InlineKeyboardButton(
+            text="🗑️ Очистить прогресс",
+            callback_data=f"clear_progress_{plan_id}"
+        )
+    ])
+
+    # Возврат к планам
+    buttons.append([
+        InlineKeyboardButton(
+            text="📅 Планы чтения",
+            callback_data="reading_plans"
+        )
+    ])
+
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def create_user_plans_keyboard(user_plans) -> InlineKeyboardMarkup:
+    """
+    Создает клавиатуру с активными планами пользователя
+
+    Args:
+        user_plans: список планов пользователя
+    """
+    from services.reading_plans import reading_plans_service
+
+    buttons = []
+
+    if user_plans:
+        for user_plan in user_plans:
+            plan_id = user_plan['plan_id']
+            current_day = user_plan['current_day']
+
+            # Получаем информацию о плане
+            plan = reading_plans_service.get_plan(plan_id)
+            if plan:
+                buttons.append([
+                    InlineKeyboardButton(
+                        text=f"📋 {plan.title} (день {current_day}/{plan.total_days})",
+                        callback_data=f"view_plan_{plan_id}"
+                    )
+                ])
+    else:
+        buttons.append([
+            InlineKeyboardButton(
+                text="Нет активных планов",
+                callback_data="reading_plans"
+            )
+        ])
+
+    # Кнопка добавления нового плана
+    buttons.append([
+        InlineKeyboardButton(
+            text="➕ Добавить план",
+            callback_data="reading_plans"
+        )
+    ])
+
+    # Возврат в меню
+    buttons.append([
+        InlineKeyboardButton(
+            text="🏠 Вернуться в меню",
+            callback_data="back_to_menu"
+        )
+    ])
+
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def create_reading_navigation_keyboard(references: list, current_ref: int = 0,
+                                       plan_id: str = None, day: int = None,
+                                       is_bookmarked: bool = False) -> InlineKeyboardMarkup:
+    """
+    Создает клавиатуру для навигации по чтениям дня плана
+
+    Args:
+        references: список ссылок для чтения
+        current_ref: индекс текущей ссылки
+        plan_id: ID плана чтения
+        day: номер дня
+        is_bookmarked: добавлена ли текущая ссылка в закладки
+    """
+    buttons = []
+
+    # Навигация по ссылкам дня
+    if len(references) > 1:
+        nav_buttons = []
+
+        if current_ref > 0:
+            nav_buttons.append(
+                InlineKeyboardButton(
+                    text="⬅️ Предыдущее чтение",
+                    callback_data=f"reading_ref_{plan_id}_{day}_{current_ref-1}"
+                )
+            )
+
+        if current_ref < len(references) - 1:
+            nav_buttons.append(
+                InlineKeyboardButton(
+                    text="➡️ Следующее чтение",
+                    callback_data=f"reading_ref_{plan_id}_{day}_{current_ref+1}"
+                )
+            )
+
+        if nav_buttons:
+            buttons.append(nav_buttons)
+
+    # Кнопки для толкований и разборов (как в обычном поиске)
+    buttons.append([
+        InlineKeyboardButton(
+            text="📝 Толкование Лопухина",
+            callback_data=f"lopukhin_reading_{plan_id}_{day}_{current_ref}"
+        )
+    ])
+
+    buttons.append([
+        InlineKeyboardButton(
+            text="🤖 ИИ-разбор",
+            callback_data=f"ai_reading_{plan_id}_{day}_{current_ref}"
+        )
+    ])
+
+    # Кнопка закладки
+    bookmark_text = "🗑️ Удалить закладку" if is_bookmarked else "📌 Добавить закладку"
+    bookmark_data = f"remove_bookmark_reading_{plan_id}_{day}_{current_ref}" if is_bookmarked else f"add_bookmark_reading_{plan_id}_{day}_{current_ref}"
+
+    buttons.append([
+        InlineKeyboardButton(
+            text=bookmark_text,
+            callback_data=bookmark_data
+        )
+    ])
+
+    # Возврат к дню плана
+    if plan_id and day:
+        buttons.append([
+            InlineKeyboardButton(
+                text="📅 Вернуться к дню",
+                callback_data=f"plan_day_{plan_id}_{day}"
+            )
+        ])
 
     return InlineKeyboardMarkup(inline_keyboard=buttons)

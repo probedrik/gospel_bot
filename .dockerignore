@@ -41,6 +41,16 @@ logs/*
 .vscode/
 .idea/
 
+# SECURITY: Exclude files with API keys and secrets
+config/ai_settings.py
+**/ai_settings.py
+*.key
+*.pem
+*.p12
+*.pfx
+secrets/
+credentials/
+
 # Don't exclude data directory structure
 !data/.gitkeep
 !logs/.gitkeep 

@@ -190,11 +190,12 @@ class BibleData:
             correct_chapters = self.max_chapters.copy()
 
             # Логгируем исходные значения для важных книг
-            logger.info(f"Правильные значения глав для книг:")
+            logger.info("Правильные значения глав для книг:")
             # 1 Петра (46), 2 Петра (47), 1 Иоанна (48), 2 Фес (60), 1 Тим (61)
             for book_id in [46, 47, 48, 60, 61]:
-                logger.info(f"  {self.book_dict.get(book_id, f'ID {book_id}')}: {
-                            correct_chapters.get(book_id)} глав")
+                book_name = self.book_dict.get(book_id, f'ID {book_id}')
+                chapters = correct_chapters.get(book_id)
+                logger.info(f"  {book_name}: {chapters} глав")
 
             # Загружаем максимальное количество глав из Excel
             if "Главы" in self.books_df.columns:
@@ -206,11 +207,12 @@ class BibleData:
                         excel_chapters_count[book_id] = int(chapters)
 
                 # Логгируем значения из Excel для тех же книг
-                logger.info(f"Значения глав из Excel:")
+                logger.info("Значения глав из Excel:")
                 # 1 Петра (46), 2 Петра (47), 1 Иоанна (48), 2 Фес (60), 1 Тим (61)
                 for book_id in [46, 47, 48, 60, 61]:
-                    logger.info(f"  {self.book_dict.get(book_id, f'ID {book_id}')}: {
-                                excel_chapters_count.get(book_id)} глав")
+                    book_name = self.book_dict.get(book_id, f'ID {book_id}')
+                    chapters = excel_chapters_count.get(book_id)
+                    logger.info(f"  {book_name}: {chapters} глав")
 
                 # Проверяем на расхождения
                 discrepancies = []
@@ -294,6 +296,50 @@ class BibleData:
         """
         name = name.strip().lower()
         return self.book_synonyms.get(name, name.capitalize())
+
+    def parse_reference(self, reference: str) -> Optional[Tuple[int, int, Optional[int], Optional[int]]]:
+        """
+        Парсит библейскую ссылку и возвращает (book_id, chapter, start_verse, end_verse)
+
+        Args:
+            reference: Библейская ссылка (например, "Мф 5:3-12", "Ин 3:16", "Быт 1")
+
+        Returns:
+            Кортеж (book_id, chapter, start_verse, end_verse) или None при ошибке
+        """
+        import re
+
+        # Пример: Ин 3:16-18 или от иоанна 3:16
+        match = re.match(
+            r'^([а-яА-ЯёЁ0-9\s]+)\s+(\d+)(?::(\d+)(?:-(\d+))?)?$', reference.strip(), re.IGNORECASE)
+        if not match:
+            return None
+
+        book_raw = match.group(1).strip()
+        chapter = int(match.group(2))
+        verse = match.group(3)
+        verse_end = match.group(4)
+
+        # Нормализация названия книги
+        book_abbr = self.normalize_book_name(book_raw)
+        if not book_abbr:
+            return None
+
+        # Получаем ID книги
+        book_id = self.get_book_id(book_abbr)
+        if not book_id:
+            return None
+
+        # Проверяем корректность главы
+        if not self.is_valid_chapter(book_id, chapter):
+            return None
+
+        if verse and verse_end:
+            return (book_id, chapter, int(verse), int(verse_end))
+        elif verse:
+            return (book_id, chapter, int(verse), None)
+        else:
+            return (book_id, chapter, None, None)
 
 
 # Создаем глобальный экземпляр класса для использования в других модулях

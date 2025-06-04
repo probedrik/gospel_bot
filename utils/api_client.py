@@ -6,20 +6,27 @@ import aiohttp
 import time
 from typing import Dict, Any, Optional
 
-from config.settings import API_URL, API_TIMEOUT, CACHE_TTL
+from config.settings import API_URL, API_TIMEOUT, CACHE_TTL, USE_LOCAL_FILES
 from config.ai_settings import ENABLE_GPT_EXPLAIN, OPENROUTER_API_KEY, OPENROUTER_MODEL, LLM_ROLE
+# Добавляем флаг для логирования OpenRouter API
+try:
+    from config.ai_settings import LOG_OPENROUTER_RESPONSE
+except ImportError:
+    LOG_OPENROUTER_RESPONSE = False
 
 # Инициализация логгера
 logger = logging.getLogger(__name__)
 
 
 class BibleAPIClient:
-    """Класс для работы с API Библии с поддержкой кэширования."""
+    """Класс для работы с API Библии с поддержкой кэширования и локальных файлов."""
 
     def __init__(self):
         self._session = None
         # Простой кэш в памяти: ключ -> (значение, время_истечения)
         self._cache = {}
+        # Импортируем локальный сервис только при необходимости
+        self._local_service = None
 
     async def get_session(self) -> aiohttp.ClientSession:
         """Возвращает существующую сессию или создает новую."""
@@ -50,11 +57,18 @@ class BibleAPIClient:
         self._cache[key] = (value, expiration_time)
         logger.debug(f"Данные сохранены в кэш: {key}")
 
+    def _get_local_service(self):
+        """Получает экземпляр локального сервиса (ленивая инициализация)."""
+        if self._local_service is None:
+            from services.local_bible import local_bible_service
+            self._local_service = local_bible_service
+        return self._local_service
+
     async def get_chapter(
         self, book: int, chapter: int, translation: str = "rst"
     ) -> Dict[str, Any]:
         """
-        Получает текст главы из API.
+        Получает текст главы из API или локальных файлов.
 
         Args:
             book: Номер книги (1-66)
@@ -71,6 +85,13 @@ class BibleAPIClient:
         except Exception as e:
             logger.error(f"Некорректные типы для book или chapter: {e}")
             raise ValueError("book и chapter должны быть целыми числами")
+
+        # Используем локальные файлы, если включено в настройках
+        if USE_LOCAL_FILES:
+            logger.debug(
+                f"Используем локальные файлы для получения главы {book}:{chapter}")
+            local_service = self._get_local_service()
+            return await local_service.get_chapter(book, chapter, translation)
 
         cache_key = f"chapter_{book}_{chapter}_{translation}"
         cached_data = self._get_from_cache(cache_key)
@@ -112,6 +133,14 @@ class BibleAPIClient:
         except Exception as e:
             logger.error(f"Некорректные типы для book или chapter: {e}")
             return f"Ошибка: некорректные параметры главы (book/chapter)"
+
+        # Используем локальные файлы, если включено в настройках
+        if USE_LOCAL_FILES:
+            logger.debug(
+                f"Используем локальные файлы для получения отформатированной главы {book}:{chapter}")
+            local_service = self._get_local_service()
+            return await local_service.get_formatted_chapter(book, chapter, translation)
+
         try:
             data = await self.get_chapter(book, chapter, translation)
             # Проверка наличия ключа 'info' и нужных данных
@@ -150,7 +179,7 @@ class BibleAPIClient:
 
     async def search_bible_text(self, search_query: str, translation: str = "rst") -> list:
         """
-        Поиск слова или фразы в тексте Библии через API.
+        Поиск слова или фразы в тексте Библии через API или локальные файлы.
 
         Args:
             search_query: Поисковый запрос
@@ -162,6 +191,13 @@ class BibleAPIClient:
         if len(search_query) < 3:
             logger.warning("Слишком короткий поисковый запрос")
             return []
+
+        # Используем локальные файлы, если включено в настройках
+        if USE_LOCAL_FILES:
+            logger.debug(
+                f"Используем локальные файлы для поиска '{search_query}'")
+            local_service = self._get_local_service()
+            return await local_service.search_bible_text(search_query, translation)
 
         cache_key = f"search_{translation}_{search_query}"
         cached_data = self._get_from_cache(cache_key)
@@ -195,6 +231,13 @@ class BibleAPIClient:
             logger.error(f"Некорректные типы для book или chapter: {e}")
             return f"Ошибка: некорректные параметры главы (book/chapter)"
 
+        # Используем локальные файлы, если включено в настройках
+        if USE_LOCAL_FILES:
+            logger.debug(
+                f"Используем локальные файлы для получения стихов {book}:{chapter}")
+            local_service = self._get_local_service()
+            return await local_service.get_verses(book, chapter, verse_range, translation)
+
         try:
             data = await self.get_chapter(book, chapter, translation)
             verses = [v for k, v in data.items() if k != "info"]
@@ -212,6 +255,74 @@ class BibleAPIClient:
         except Exception as e:
             logger.error(f"Ошибка при получении диапазона стихов: {e}")
             return f"Ошибка: {e}"
+
+    async def get_formatted_verses(self, book: int, chapter: int, start_verse: int, end_verse: int, translation: str = "rst") -> str:
+        """
+        Получает отформатированный текст диапазона стихов главы.
+
+        Args:
+            book: Номер книги (1-66)
+            chapter: Номер главы
+            start_verse: Начальный стих
+            end_verse: Конечный стих
+            translation: Код перевода (rst, rbo)
+
+        Returns:
+            Отформатированный текст стихов
+        """
+        try:
+            data = await self.get_chapter(book, chapter, translation)
+            verses = data.get("verses", [])
+            selected = [v for v in verses if start_verse <=
+                        v["number"] <= end_verse]
+            if not selected:
+                return f"Стихи {start_verse}-{end_verse} не найдены в {book} {chapter}"
+            return "\n".join([f"<b>{chapter}:{v['number']}</b> {v['text']}" for v in selected])
+        except Exception as e:
+            return f"Ошибка при получении стихов: {e}"
+
+    async def get_verse_by_reference(self, reference: str, translation: str = "rst") -> str:
+        """
+        Получает текст по библейской ссылке (например, "Мф 5:3-12" или "Ин 3:16")
+
+        Args:
+            reference: Библейская ссылка
+            translation: Код перевода (rst, rbo)
+
+        Returns:
+            Отформатированный текст
+        """
+        # Используем локальные файлы, если включено в настройках
+        if USE_LOCAL_FILES:
+            logger.debug(
+                f"Используем локальные файлы для получения ссылки '{reference}'")
+            local_service = self._get_local_service()
+            return await local_service.get_verse_by_reference(reference, translation)
+
+        try:
+            from utils.bible_data import bible_data
+
+            # Парсим ссылку
+            parsed = bible_data.parse_reference(reference)
+            if not parsed:
+                return f"Не удалось распознать ссылку: {reference}"
+
+            book_id, chapter, start_verse, end_verse = parsed
+
+            if start_verse and end_verse:
+                # Диапазон стихов
+                return await self.get_verses(book_id, chapter, (start_verse, end_verse), translation)
+            elif start_verse:
+                # Один стих
+                return await self.get_verses(book_id, chapter, start_verse, translation)
+            else:
+                # Вся глава
+                return await self.get_formatted_chapter(book_id, chapter, translation)
+
+        except Exception as e:
+            logger.error(
+                f"Ошибка при получении текста по ссылке {reference}: {e}")
+            return f"Ошибка при получении текста: {reference}"
 
 
 # Кэш для ответов ИИ: ключ -> ответ
@@ -244,6 +355,8 @@ async def ask_gpt_explain(text: str) -> str:
     async with aiohttp.ClientSession() as session:
         async with session.post(url, headers=headers, json=payload) as resp:
             data = await resp.json()
+            if 'LOG_OPENROUTER_RESPONSE' in globals() and LOG_OPENROUTER_RESPONSE:
+                logger.error(f"OpenRouter API raw response: {data}")
             try:
                 result = data["choices"][0]["message"]["content"].strip()
                 _gpt_explain_cache[cache_key] = result
