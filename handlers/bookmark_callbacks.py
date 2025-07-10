@@ -6,6 +6,7 @@ import re
 from aiogram import Router, F
 from aiogram.types import CallbackQuery
 from aiogram.fsm.context import FSMContext
+from config.settings import ENABLE_VERSE_NUMBERS, BIBLE_MARKDOWN_ENABLED, BIBLE_MARKDOWN_MODE
 
 from keyboards.main import get_main_keyboard, create_navigation_keyboard, create_bookmarks_keyboard
 from utils.bible_data import bible_data
@@ -276,15 +277,64 @@ async def bookmark_selected(callback: CallbackQuery, state: FSMContext, db=None)
         # Получаем текст главы
         text = await bible_api.get_formatted_chapter(book_id, chapter, translation)
 
-        # Используем новую систему постраничного просмотра
-        from handlers.text_messages import show_chapter_page
-        await show_chapter_page(callback, book_id, chapter, 0, state, is_new_chapter=True)
+        # Отправляем текст главы
+        from utils.text_utils import get_verses_parse_mode
+        parse_mode = get_verses_parse_mode()
 
-        # Навигация по главам
+        for part in split_text(text):
+            await callback.message.answer(part, parse_mode=parse_mode)
+
+        # Создаем дополнительные кнопки (толкование, ИИ)
+        extra_buttons = []
+        # Получаем английское сокращение для поиска в комментарии
+        en_book = None
+        en_to_ru = {
+            "Gen": "Быт", "Exod": "Исх", "Lev": "Лев", "Num": "Чис", "Deut": "Втор", "Josh": "Нав", "Judg": "Суд", "Ruth": "Руф",
+            "1Sam": "1Цар", "2Sam": "2Цар", "1Kgs": "3Цар", "2Kgs": "4Цар", "1Chr": "1Пар", "2Chr": "2Пар", "Ezra": "Езд", "Neh": "Неем",
+            "Esth": "Есф", "Job": "Иов", "Ps": "Пс", "Prov": "Прит", "Eccl": "Еккл", "Song": "Песн", "Isa": "Ис", "Jer": "Иер",
+            "Lam": "Плач", "Ezek": "Иез", "Dan": "Дан", "Hos": "Ос", "Joel": "Иоил", "Amos": "Ам", "Obad": "Авд", "Jonah": "Ион",
+            "Mic": "Мих", "Nah": "Наум", "Hab": "Авв", "Zeph": "Соф", "Hag": "Агг", "Zech": "Зах", "Mal": "Мал",
+            "Matt": "Мф", "Mark": "Мк", "Luke": "Лк", "John": "Ин", "Acts": "Деян", "Jas": "Иак", "1Pet": "1Пет", "2Pet": "2Пет",
+            "1John": "1Ин", "2John": "2Ин", "3John": "3Ин", "Jude": "Иуд", "Rom": "Рим", "1Cor": "1Кор", "2Cor": "2Кор",
+            "Gal": "Гал", "Eph": "Еф", "Phil": "Флп", "Col": "Кол", "1Thess": "1Фес", "2Thess": "2Фес", "1Tim": "1Тим",
+            "2Tim": "2Тим", "Titus": "Тит", "Phlm": "Флм", "Heb": "Евр", "Rev": "Откр"
+        }
+
+        book_abbr = None
+        for abbr, b_id in bible_data.book_abbr_dict.items():
+            if b_id == book_id:
+                book_abbr = abbr
+                break
+
+        for en, ru in en_to_ru.items():
+            if ru == book_abbr:
+                en_book = en
+                break
+
+        # Кнопка толкования Лопухина (проверяем глобальную настройку)
+        from config.settings import ENABLE_LOPUKHIN_COMMENTARY
+        if ENABLE_LOPUKHIN_COMMENTARY and en_book:
+            from aiogram.types import InlineKeyboardButton
+            extra_buttons.append([
+                InlineKeyboardButton(
+                    text="Толкование проф. Лопухина",
+                    callback_data=f"open_commentary_{en_book}_{chapter}_0"
+                )
+            ])
+            from config.ai_settings import ENABLE_GPT_EXPLAIN
+            if ENABLE_GPT_EXPLAIN:
+                extra_buttons.append([
+                    InlineKeyboardButton(
+                        text="🤖 Разбор от ИИ",
+                        callback_data=f"gpt_explain_{en_book}_{chapter}_0"
+                    )
+                ])
+
+        # Отправляем объединенную клавиатуру навигации с дополнительными кнопками
         await callback.message.answer(
-            f"Вы открыли закладку: {book_name} {chapter}\nНавигация по главам:",
+            "⚡ Выберите действие:",
             reply_markup=create_navigation_keyboard(
-                has_previous, has_next, is_bookmarked)
+                has_previous, has_next, is_bookmarked, extra_buttons)
         )
         await callback.answer()
     except ValueError as e:

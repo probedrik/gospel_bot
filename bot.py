@@ -124,7 +124,7 @@ async def main() -> None:
     finally:
         logger.info("Бот остановлен")
         # Закрываем соединения с базой данных
-        asyncio.run(db_manager.close())
+        await db_manager.close()
         logger.info("Завершение работы")
 
 

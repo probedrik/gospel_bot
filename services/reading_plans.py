@@ -79,13 +79,13 @@ class ReadingPlansService:
                 else:
                     plan_title = filename.replace('.csv', '')
 
-                # Создаем короткий ID плана
+                # Создаем короткий ID плана (обратная совместимость со старыми ID)
                 if 'Евангелие' in filename:
-                    plan_id = 'gospel_daily'
+                    plan_id = 'plan1'  # gospel_daily
                 elif 'Классический' in filename:
-                    plan_id = 'classic_year'
+                    plan_id = 'plan2'  # classic_year
                 elif 'ВЗ-и-НЗ' in filename or 'ВЗ_и_НЗ' in filename:
-                    plan_id = 'ot_nt_plan'
+                    plan_id = 'plan3'  # ot_nt_plan
                 else:
                     # Fallback для других файлов
                     plan_id = filename.replace('.csv', '').replace(

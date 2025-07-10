@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 
-@router.message(F.text == "📅 Планы чтения")
+@router.message(F.text == "📅 План чтения")
 async def show_reading_plans(message: Message, state: FSMContext):
     """Показывает список доступных планов чтения"""
     try:

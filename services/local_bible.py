@@ -175,7 +175,7 @@ class LocalBibleService:
 
     async def get_verses(self, book: int, chapter: int, verse_range, translation: str = "rst") -> str:
         """
-        Получает текст одного стиха или диапазона стихов из главы.
+        Получает отформатированный текст одного стиха или диапазона стихов из главы.
 
         Args:
             book: Номер книги
@@ -184,64 +184,96 @@ class LocalBibleService:
             translation: Код перевода
 
         Returns:
-            Отформатированный текст стихов
+            Отформатированный текст стихов с учетом настроек форматирования
         """
         try:
+            from config.settings import ENABLE_VERSE_NUMBERS, BIBLE_MARKDOWN_ENABLED, BIBLE_MARKDOWN_MODE, BIBLE_QUOTE_ENABLED
+            from utils.text_utils import format_as_quote
+
             chapter_data = await self.get_chapter(book, chapter, translation)
 
             # Получаем стихи (исключаем 'info')
             verses = []
-            verse_numbers = []
-
             for key, value in chapter_data.items():
                 if key != "info":
                     try:
                         verse_num = int(key)
                         verses.append((verse_num, value))
-                        verse_numbers.append(verse_num)
                     except ValueError:
                         continue
 
             # Сортируем по номеру стиха
             verses.sort(key=lambda x: x[0])
-            verse_texts = [v[1] for v in verses]
-
-            if isinstance(verse_range, tuple):
-                start, end = verse_range
-                # Находим индексы стихов в отсортированном списке
-                start_idx = None
-                end_idx = None
-
-                for i, (verse_num, _) in enumerate(verses):
-                    if verse_num == start:
-                        start_idx = i
-                    if verse_num == end:
-                        end_idx = i
-                        break
-
-                if start_idx is None or end_idx is None:
-                    raise ValueError(f"Стихи {start}-{end} не найдены")
-
-                selected = verse_texts[start_idx:end_idx + 1]
-                verses_text = ' '.join(selected)
-                ref = f"{chapter_data['info']['book']} {chapter}:{start}-{end}"
-            else:
-                # Один стих
-                verse_idx = None
-                for i, (verse_num, _) in enumerate(verses):
-                    if verse_num == verse_range:
-                        verse_idx = i
-                        break
-
-                if verse_idx is None:
-                    raise ValueError(f"Стих {verse_range} не найден")
-
-                selected = [verse_texts[verse_idx]]
-                verses_text = ' '.join(selected)
-                ref = f"{chapter_data['info']['book']} {chapter}:{verse_range}"
 
             testament = "Ветхий завет" if book < 40 else "Новый завет"
-            return f"{testament}. {ref}:\n{verses_text}"
+            book_name = chapter_data['info']['book']
+
+            # Определяем какие стихи нужны
+            if isinstance(verse_range, tuple):
+                start, end = verse_range
+                selected_verses = [(num, text)
+                                   for num, text in verses if start <= num <= end]
+                ref_text = f"{start}-{end}"
+            else:
+                selected_verses = [(num, text)
+                                   for num, text in verses if num == verse_range]
+                ref_text = str(verse_range)
+
+            if not selected_verses:
+                raise ValueError(f"Стихи не найдены")
+
+            # Форматируем в зависимости от настроек
+            if ENABLE_VERSE_NUMBERS:
+                # Определяем формат, используя ту же логику что и get_verses_parse_mode()
+                from utils.text_utils import get_verses_parse_mode
+                parse_mode = get_verses_parse_mode()
+                format_mode = parse_mode if parse_mode else "HTML"
+
+                # Получаем функции форматирования
+                from utils.text_utils import get_verse_format_functions
+                format_functions = get_verse_format_functions(chapter)
+
+                # Форматируем заголовок и стихи в зависимости от режима
+                if format_mode.upper() == "HTML":
+                    title = f"<b>{testament}. {book_name} {chapter}:{ref_text}</b>"
+                    verse_format = format_functions["HTML"]
+                elif format_mode.upper() == "MARKDOWN":
+                    title = f"**{testament}. {book_name} {chapter}:{ref_text}**"
+                    verse_format = format_functions["MARKDOWN"]
+                elif format_mode.upper() == "MARKDOWNV2":
+                    # Экранируем спецсимволы для MarkdownV2
+                    def escape_md(s):
+                        s = s.replace('\\', '\\\\')
+                        chars = r'_ * [ ] ( ) ~ ` > # + - = | { } . !'
+                        for c in chars.split():
+                            s = s.replace(c, f'\\{c}')
+                        return s
+
+                    escaped_testament = escape_md(testament)
+                    escaped_book = escape_md(book_name)
+                    escaped_ref = escape_md(ref_text)
+                    title = f"*{escaped_testament}\\. {escaped_book} {chapter}:{escaped_ref}*"
+                    verse_format = format_functions["MARKDOWNV2"]
+                else:
+                    # Обычный текст
+                    title = f"{testament}. {book_name} {chapter}:{ref_text}"
+                    verse_format = format_functions["PLAIN"]
+
+                # Формируем результат с номерами стихов
+                result = f"{title}\n\n"
+                for verse_num, verse_text in selected_verses:
+                    result += f"{verse_format(verse_num, verse_text)}\n\n"
+                result = result.strip()
+            else:
+                # Простой формат без номеров стихов
+                verses_text = ' '.join([text for num, text in selected_verses])
+                result = f"{testament}. {book_name} {chapter}:{ref_text}\n{verses_text}"
+
+            # Применяем форматирование цитаты если включено
+            if BIBLE_QUOTE_ENABLED:
+                result = format_as_quote(result)
+
+            return result
 
         except Exception as e:
             logger.error(f"Ошибка при получении стихов: {e}")
@@ -260,6 +292,8 @@ class LocalBibleService:
             Отформатированный текст главы
         """
         try:
+            from config.settings import ENABLE_VERSE_NUMBERS
+
             chapter_data = await self.get_chapter(book, chapter, translation)
 
             # Получаем стихи (исключаем 'info')
@@ -271,10 +305,113 @@ class LocalBibleService:
             testament = "Ветхий завет" if book < 40 else "Новый завет"
             book_name = chapter_data['info']['book']
 
-            return f"{testament}. {book_name} {chapter}:\n{' '.join(verses)}"
+            if ENABLE_VERSE_NUMBERS:
+                # Формат с номерами стихов
+                return await self.get_formatted_chapter_with_verses(book, chapter, translation)
+            else:
+                # Обычный формат
+                from config.settings import BIBLE_QUOTE_ENABLED
+                from utils.text_utils import format_as_quote
+
+                result = f"{testament}. {book_name} {chapter}:\n{' '.join(verses)}"
+
+                # Применяем форматирование цитаты если включено
+                if BIBLE_QUOTE_ENABLED:
+                    result = format_as_quote(result)
+
+                return result
 
         except Exception as e:
             logger.error(f"Ошибка при получении отформатированной главы: {e}")
+            return f"Ошибка: {e}"
+
+    async def get_formatted_chapter_with_verses(self, book: int, chapter: int, translation: str = "rst") -> str:
+        """
+        Получает отформатированный текст главы с номерами стихов.
+
+        Args:
+            book: Номер книги (1-66)
+            chapter: Номер главы
+            translation: Код перевода (rst, rbo)
+
+        Returns:
+            Отформатированный текст главы с номерами стихов в текущем формате
+        """
+        try:
+            from config.settings import BIBLE_MARKDOWN_ENABLED, BIBLE_MARKDOWN_MODE
+
+            chapter_data = await self.get_chapter(book, chapter, translation)
+
+            # Получаем стихи (исключаем 'info')
+            verses = []
+            for key, value in chapter_data.items():
+                if key != "info":
+                    try:
+                        verse_num = int(key)
+                        verses.append((verse_num, value))
+                    except ValueError:
+                        continue
+
+            # Сортируем по номеру стиха
+            verses.sort(key=lambda x: x[0])
+
+            testament = "Ветхий завет" if book < 40 else "Новый завет"
+            book_name = chapter_data['info']['book']
+
+            # Определяем формат, используя ту же логику что и get_verses_parse_mode()
+            from utils.text_utils import get_verses_parse_mode
+            parse_mode = get_verses_parse_mode()
+            format_mode = parse_mode if parse_mode else "HTML"
+
+            # Получаем функции форматирования
+            from utils.text_utils import get_verse_format_functions
+            format_functions = get_verse_format_functions(chapter)
+
+            # Форматируем заголовок и стихи в зависимости от режима
+            if format_mode.upper() == "HTML":
+                title = f"<b>{testament}. {book_name} {chapter}:</b>"
+                verse_format = format_functions["HTML"]
+            elif format_mode.upper() == "MARKDOWN":
+                title = f"**{testament}. {book_name} {chapter}:**"
+                verse_format = format_functions["MARKDOWN"]
+            elif format_mode.upper() == "MARKDOWNV2":
+                # Экранируем спецсимволы для MarkdownV2
+                def escape_md(s):
+                    s = s.replace('\\', '\\\\')
+                    chars = r'_ * [ ] ( ) ~ ` > # + - = | { } . !'
+                    for c in chars.split():
+                        s = s.replace(c, f'\\{c}')
+                    return s
+
+                escaped_testament = escape_md(testament)
+                escaped_book = escape_md(book_name)
+                title = f"*{escaped_testament}\\. {escaped_book} {chapter}:*"
+                verse_format = format_functions["MARKDOWNV2"]
+            else:
+                # Обычный текст
+                title = f"{testament}. {book_name} {chapter}:"
+                verse_format = format_functions["PLAIN"]
+
+            # Формируем результат
+            result = f"{title}\n\n"
+
+            for verse_num, verse_text in verses:
+                result += f"{verse_format(verse_num, verse_text)}\n\n"
+
+            result = result.strip()
+
+            # Применяем форматирование цитаты если включено
+            from config.settings import BIBLE_QUOTE_ENABLED
+            from utils.text_utils import format_as_quote
+
+            if BIBLE_QUOTE_ENABLED:
+                result = format_as_quote(result)
+
+            return result
+
+        except Exception as e:
+            logger.error(
+                f"Ошибка при получении отформатированной главы с номерами стихов: {e}")
             return f"Ошибка: {e}"
 
     async def search_bible_text(self, search_query: str, translation: str = "rst") -> List[Dict[str, Any]]:

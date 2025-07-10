@@ -6,7 +6,7 @@ import aiohttp
 import time
 from typing import Dict, Any, Optional
 
-from config.settings import API_URL, API_TIMEOUT, CACHE_TTL, USE_LOCAL_FILES
+from config.settings import API_URL, API_TIMEOUT, CACHE_TTL
 from config.ai_settings import ENABLE_GPT_EXPLAIN, OPENROUTER_API_KEY, OPENROUTER_MODEL, LLM_ROLE
 # Добавляем флаг для логирования OpenRouter API
 try:
@@ -19,14 +19,12 @@ logger = logging.getLogger(__name__)
 
 
 class BibleAPIClient:
-    """Класс для работы с API Библии с поддержкой кэширования и локальных файлов."""
+    """Класс для работы с API Библии с поддержкой кэширования."""
 
     def __init__(self):
         self._session = None
         # Простой кэш в памяти: ключ -> (значение, время_истечения)
         self._cache = {}
-        # Импортируем локальный сервис только при необходимости
-        self._local_service = None
 
     async def get_session(self) -> aiohttp.ClientSession:
         """Возвращает существующую сессию или создает новую."""
@@ -57,18 +55,11 @@ class BibleAPIClient:
         self._cache[key] = (value, expiration_time)
         logger.debug(f"Данные сохранены в кэш: {key}")
 
-    def _get_local_service(self):
-        """Получает экземпляр локального сервиса (ленивая инициализация)."""
-        if self._local_service is None:
-            from services.local_bible import local_bible_service
-            self._local_service = local_bible_service
-        return self._local_service
-
     async def get_chapter(
         self, book: int, chapter: int, translation: str = "rst"
     ) -> Dict[str, Any]:
         """
-        Получает текст главы из API или локальных файлов.
+        Получает текст главы из API.
 
         Args:
             book: Номер книги (1-66)
@@ -85,13 +76,6 @@ class BibleAPIClient:
         except Exception as e:
             logger.error(f"Некорректные типы для book или chapter: {e}")
             raise ValueError("book и chapter должны быть целыми числами")
-
-        # Используем локальные файлы, если включено в настройках
-        if USE_LOCAL_FILES:
-            logger.debug(
-                f"Используем локальные файлы для получения главы {book}:{chapter}")
-            local_service = self._get_local_service()
-            return await local_service.get_chapter(book, chapter, translation)
 
         cache_key = f"chapter_{book}_{chapter}_{translation}"
         cached_data = self._get_from_cache(cache_key)
@@ -133,26 +117,133 @@ class BibleAPIClient:
         except Exception as e:
             logger.error(f"Некорректные типы для book или chapter: {e}")
             return f"Ошибка: некорректные параметры главы (book/chapter)"
-
-        # Используем локальные файлы, если включено в настройках
-        if USE_LOCAL_FILES:
-            logger.debug(
-                f"Используем локальные файлы для получения отформатированной главы {book}:{chapter}")
-            local_service = self._get_local_service()
-            return await local_service.get_formatted_chapter(book, chapter, translation)
-
         try:
+            from config.settings import ENABLE_VERSE_NUMBERS
+
             data = await self.get_chapter(book, chapter, translation)
             # Проверка наличия ключа 'info' и нужных данных
             if not data or 'info' not in data or 'book' not in data['info']:
                 logger.error(
                     f"Некорректный ответ от API (нет 'info' или 'book'): {data}")
                 return "Ошибка: не удалось получить текст главы. Попробуйте позже."
+
             verses = [v for k, v in data.items() if k != "info"]
             testament = "Ветхий завет" if book < 40 else "Новый завет"
-            return f"{testament}. {data['info']['book']} {chapter}:\n{' '.join(verses)}"
+
+            if ENABLE_VERSE_NUMBERS:
+                # Формат с номерами стихов
+                return await self.get_formatted_chapter_with_verses(book, chapter, translation)
+            else:
+                # Обычный формат
+                from config.settings import BIBLE_QUOTE_ENABLED
+                from utils.text_utils import format_as_quote
+
+                result = f"{testament}. {data['info']['book']} {chapter}:\n{' '.join(verses)}"
+
+                # Применяем форматирование цитаты если включено
+                if BIBLE_QUOTE_ENABLED:
+                    result = format_as_quote(result)
+
+                return result
         except Exception as e:
             logger.error(f"Ошибка при получении текста главы: {e}")
+            return f"Ошибка: {e}"
+
+    async def get_formatted_chapter_with_verses(
+        self, book: int, chapter: int, translation: str = "rst"
+    ) -> str:
+        """
+        Получает отформатированный текст главы с номерами стихов.
+
+        Args:
+            book: Номер книги (1-66)
+            chapter: Номер главы
+            translation: Код перевода (rst, rbo)
+
+        Returns:
+            Отформатированный текст главы с номерами стихов в текущем формате
+        """
+        try:
+            from config.settings import BIBLE_MARKDOWN_ENABLED, BIBLE_MARKDOWN_MODE
+
+            data = await self.get_chapter(book, chapter, translation)
+
+            # Проверка наличия ключа 'info' и нужных данных
+            if not data or 'info' not in data or 'book' not in data['info']:
+                logger.error(
+                    f"Некорректный ответ от API (нет 'info' или 'book'): {data}")
+                return "Ошибка: не удалось получить текст главы. Попробуйте позже."
+
+            # Получаем стихи с номерами (исключаем 'info')
+            verses = []
+            for key, value in data.items():
+                if key != "info":
+                    try:
+                        verse_num = int(key)
+                        verses.append((verse_num, value))
+                    except ValueError:
+                        continue
+
+            # Сортируем по номеру стиха
+            verses.sort(key=lambda x: x[0])
+
+            testament = "Ветхий завет" if book < 40 else "Новый завет"
+            book_name = data['info']['book']
+
+            # Определяем формат, используя ту же логику что и get_verses_parse_mode()
+            from utils.text_utils import get_verses_parse_mode
+            parse_mode = get_verses_parse_mode()
+            format_mode = parse_mode if parse_mode else "HTML"
+
+            # Получаем функции форматирования
+            from utils.text_utils import get_verse_format_functions
+            format_functions = get_verse_format_functions(chapter)
+
+            # Форматируем заголовок и стихи в зависимости от режима
+            if format_mode.upper() == "HTML":
+                title = f"<b>{testament}. {book_name} {chapter}:</b>"
+                verse_format = format_functions["HTML"]
+            elif format_mode.upper() == "MARKDOWN":
+                title = f"**{testament}. {book_name} {chapter}:**"
+                verse_format = format_functions["MARKDOWN"]
+            elif format_mode.upper() == "MARKDOWNV2":
+                # Экранируем спецсимволы для MarkdownV2
+                def escape_md(s):
+                    s = s.replace('\\', '\\\\')
+                    chars = r'_ * [ ] ( ) ~ ` > # + - = | { } . !'
+                    for c in chars.split():
+                        s = s.replace(c, f'\\{c}')
+                    return s
+
+                escaped_testament = escape_md(testament)
+                escaped_book = escape_md(book_name)
+                title = f"*{escaped_testament}\\. {escaped_book} {chapter}:*"
+                verse_format = format_functions["MARKDOWNV2"]
+            else:
+                # Обычный текст
+                title = f"{testament}. {book_name} {chapter}:"
+                verse_format = format_functions["PLAIN"]
+
+            # Формируем результат
+            result = f"{title}\n\n"
+
+            for verse_num, verse_text in verses:
+                result += f"{verse_format(verse_num, verse_text)}\n\n"
+
+            result = result.strip()
+
+            # Применяем форматирование цитаты если включено
+            from config.settings import BIBLE_QUOTE_ENABLED
+            from utils.text_utils import format_as_quote
+
+            if BIBLE_QUOTE_ENABLED:
+                result = format_as_quote(result)
+
+            return result
+
+        except Exception as e:
+            logger.error(
+                f"Ошибка при получении отформатированной главы с номерами стихов: {e}")
             return f"Ошибка: {e}"
 
     async def get_random_verse(self, translation: str = "rbo") -> str:
@@ -179,7 +270,7 @@ class BibleAPIClient:
 
     async def search_bible_text(self, search_query: str, translation: str = "rst") -> list:
         """
-        Поиск слова или фразы в тексте Библии через API или локальные файлы.
+        Поиск слова или фразы в тексте Библии через API.
 
         Args:
             search_query: Поисковый запрос
@@ -191,13 +282,6 @@ class BibleAPIClient:
         if len(search_query) < 3:
             logger.warning("Слишком короткий поисковый запрос")
             return []
-
-        # Используем локальные файлы, если включено в настройках
-        if USE_LOCAL_FILES:
-            logger.debug(
-                f"Используем локальные файлы для поиска '{search_query}'")
-            local_service = self._get_local_service()
-            return await local_service.search_bible_text(search_query, translation)
 
         cache_key = f"search_{translation}_{search_query}"
         cached_data = self._get_from_cache(cache_key)
@@ -220,7 +304,7 @@ class BibleAPIClient:
 
     async def get_verses(self, book: int, chapter: int, verse_range, translation: str = "rst") -> str:
         """
-        Получает текст одного стиха или диапазона стихов из главы.
+        Получает отформатированный текст одного стиха или диапазона стихов из главы.
         verse_range: int (один стих) или (start, end) для диапазона
         """
         # Приведение типов для book и chapter
@@ -231,27 +315,95 @@ class BibleAPIClient:
             logger.error(f"Некорректные типы для book или chapter: {e}")
             return f"Ошибка: некорректные параметры главы (book/chapter)"
 
-        # Используем локальные файлы, если включено в настройках
-        if USE_LOCAL_FILES:
-            logger.debug(
-                f"Используем локальные файлы для получения стихов {book}:{chapter}")
-            local_service = self._get_local_service()
-            return await local_service.get_verses(book, chapter, verse_range, translation)
-
         try:
+            from config.settings import ENABLE_VERSE_NUMBERS, BIBLE_MARKDOWN_ENABLED, BIBLE_MARKDOWN_MODE, BIBLE_QUOTE_ENABLED
+            from utils.text_utils import format_as_quote
+
             data = await self.get_chapter(book, chapter, translation)
-            verses = [v for k, v in data.items() if k != "info"]
+
+            # Получаем все стихи как пары (номер, текст)
+            all_verses = []
+            for key, value in data.items():
+                if key != "info":
+                    try:
+                        verse_num = int(key)
+                        all_verses.append((verse_num, value))
+                    except ValueError:
+                        continue
+
+            # Сортируем по номеру стиха
+            all_verses.sort(key=lambda x: x[0])
+
+            testament = "Ветхий завет" if book < 40 else "Новый завет"
+            book_name = data['info']['book']
+
+            # Определяем какие стихи нужны
             if isinstance(verse_range, tuple):
                 start, end = verse_range
-                selected = verses[start-1:end]
-                verses_text = ' '.join(selected)
-                ref = f"{data['info']['book']} {chapter}:{start}-{end}"
+                selected_verses = [(num, text)
+                                   for num, text in all_verses if start <= num <= end]
+                ref_text = f"{start}-{end}"
             else:
-                selected = verses[verse_range-1:verse_range]
-                verses_text = ' '.join(selected)
-                ref = f"{data['info']['book']} {chapter}:{verse_range}"
-            testament = "Ветхий завет" if book < 40 else "Новый завет"
-            return f"{testament}. {ref}:\n{verses_text}"
+                selected_verses = [(num, text)
+                                   for num, text in all_verses if num == verse_range]
+                ref_text = str(verse_range)
+
+            if not selected_verses:
+                return f"Ошибка: стихи не найдены"
+
+            # Форматируем в зависимости от настроек
+            if ENABLE_VERSE_NUMBERS:
+                # Определяем формат, используя ту же логику что и get_verses_parse_mode()
+                from utils.text_utils import get_verses_parse_mode
+                parse_mode = get_verses_parse_mode()
+                format_mode = parse_mode if parse_mode else "HTML"
+
+                # Получаем функции форматирования
+                from utils.text_utils import get_verse_format_functions
+                format_functions = get_verse_format_functions(chapter)
+
+                # Форматируем заголовок и стихи в зависимости от режима
+                if format_mode.upper() == "HTML":
+                    title = f"<b>{testament}. {book_name} {chapter}:{ref_text}</b>"
+                    verse_format = format_functions["HTML"]
+                elif format_mode.upper() == "MARKDOWN":
+                    title = f"**{testament}. {book_name} {chapter}:{ref_text}**"
+                    verse_format = format_functions["MARKDOWN"]
+                elif format_mode.upper() == "MARKDOWNV2":
+                    # Экранируем спецсимволы для MarkdownV2
+                    def escape_md(s):
+                        s = s.replace('\\', '\\\\')
+                        chars = r'_ * [ ] ( ) ~ ` > # + - = | { } . !'
+                        for c in chars.split():
+                            s = s.replace(c, f'\\{c}')
+                        return s
+
+                    escaped_testament = escape_md(testament)
+                    escaped_book = escape_md(book_name)
+                    escaped_ref = escape_md(ref_text)
+                    title = f"*{escaped_testament}\\. {escaped_book} {chapter}:{escaped_ref}*"
+                    verse_format = format_functions["MARKDOWNV2"]
+                else:
+                    # Обычный текст
+                    title = f"{testament}. {book_name} {chapter}:{ref_text}"
+                    verse_format = format_functions["PLAIN"]
+
+                # Формируем результат с номерами стихов
+                result = f"{title}\n\n"
+                for verse_num, verse_text in selected_verses:
+                    result += f"{verse_format(verse_num, verse_text)}\n\n"
+                result = result.strip()
+            else:
+                # Простой формат без номеров стихов
+                verses_text = ' '.join([text for num, text in selected_verses])
+                result = f"{testament}. {book_name} {chapter}:{ref_text}\n{verses_text}"
+
+            # Применяем форматирование цитаты если включено
+            if BIBLE_QUOTE_ENABLED:
+                result = format_as_quote(result)
+
+            return result
+
         except Exception as e:
             logger.error(f"Ошибка при получении диапазона стихов: {e}")
             return f"Ошибка: {e}"
@@ -280,49 +432,6 @@ class BibleAPIClient:
             return "\n".join([f"<b>{chapter}:{v['number']}</b> {v['text']}" for v in selected])
         except Exception as e:
             return f"Ошибка при получении стихов: {e}"
-
-    async def get_verse_by_reference(self, reference: str, translation: str = "rst") -> str:
-        """
-        Получает текст по библейской ссылке (например, "Мф 5:3-12" или "Ин 3:16")
-
-        Args:
-            reference: Библейская ссылка
-            translation: Код перевода (rst, rbo)
-
-        Returns:
-            Отформатированный текст
-        """
-        # Используем локальные файлы, если включено в настройках
-        if USE_LOCAL_FILES:
-            logger.debug(
-                f"Используем локальные файлы для получения ссылки '{reference}'")
-            local_service = self._get_local_service()
-            return await local_service.get_verse_by_reference(reference, translation)
-
-        try:
-            from utils.bible_data import bible_data
-
-            # Парсим ссылку
-            parsed = bible_data.parse_reference(reference)
-            if not parsed:
-                return f"Не удалось распознать ссылку: {reference}"
-
-            book_id, chapter, start_verse, end_verse = parsed
-
-            if start_verse and end_verse:
-                # Диапазон стихов
-                return await self.get_verses(book_id, chapter, (start_verse, end_verse), translation)
-            elif start_verse:
-                # Один стих
-                return await self.get_verses(book_id, chapter, start_verse, translation)
-            else:
-                # Вся глава
-                return await self.get_formatted_chapter(book_id, chapter, translation)
-
-        except Exception as e:
-            logger.error(
-                f"Ошибка при получении текста по ссылке {reference}: {e}")
-            return f"Ошибка при получении текста: {reference}"
 
 
 # Кэш для ответов ИИ: ключ -> ответ
