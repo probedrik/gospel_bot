@@ -136,7 +136,7 @@ if docker-compose ps | grep -q "Up"; then
     
     # Show recent logs
     echo -e "\n${BLUE}Recent logs (last 20 lines):${NC}"
-    docker-compose logs --tail=20 bot
+    docker-compose logs --tail=20 bible-bot
     
     echo -e "\n${GREEN}✅ Update completed successfully!${NC}"
     
@@ -145,21 +145,21 @@ if docker-compose ps | grep -q "Up"; then
     read -r response
     if [[ "$response" =~ ^([yY][eE][sS]|[yY])$ ]]; then
         echo -e "${BLUE}📋 Showing live logs (Ctrl+C to exit):${NC}"
-        docker-compose logs -f bot
+        docker-compose logs -f bible-bot
     fi
 else
     print_error "Bot failed to start properly"
     echo -e "\n${BLUE}Container status:${NC}"
     docker-compose ps
     echo -e "\n${BLUE}Error logs:${NC}"
-    docker-compose logs bot
+    docker-compose logs bible-bot
     exit 1
 fi
 
 # Show useful commands
 echo -e "\n${BLUE}📚 Useful commands:${NC}"
-echo "  View logs:           docker-compose logs -f bot"
+echo "  View logs:           docker-compose logs -f bible-bot"
 echo "  Check status:        docker-compose ps"
-echo "  Restart bot:         docker-compose restart bot"
+echo "  Restart bot:         docker-compose restart bible-bot"
 echo "  Stop bot:            docker-compose down"
 echo "  Update again:        ./update-server.sh" 
