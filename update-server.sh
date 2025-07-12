@@ -2,6 +2,7 @@
 
 # Server-side script for updating Gospel Bot
 # This script should be run on the production server
+# Usage: ./update-server.sh [--force-git]
 
 set -e  # Exit on any error
 
@@ -16,6 +17,12 @@ NC='\033[0m' # No Color
 DOCKER_IMAGE="probedrik/gospel-bot"
 CONTAINER_NAME="bible-bot"
 COMPOSE_FILE="docker-compose.yml"
+
+# Parse arguments
+FORCE_GIT=false
+if [[ "$1" == "--force-git" ]]; then
+    FORCE_GIT=true
+fi
 
 echo -e "${BLUE}🚀 Gospel Bot Server Update Script${NC}"
 echo "=================================="
@@ -32,6 +39,49 @@ print_warning() {
 print_error() {
     echo -e "${RED}✗${NC} $1"
 }
+
+# Force git update if requested
+if [ "$FORCE_GIT" = true ]; then
+    echo -e "${BLUE}🔄 Force updating from Git repository...${NC}"
+    
+    # Backup important files
+    if [ -f ".env" ]; then
+        cp .env .env.backup
+        print_status "Backed up .env file"
+    fi
+    
+    if [ -f "docker-compose.yml" ]; then
+        cp docker-compose.yml docker-compose.yml.backup
+        print_status "Backed up docker-compose.yml"
+    fi
+    
+    # Reset to origin/master
+    if git fetch origin && git reset --hard origin/master; then
+        print_status "Successfully reset to latest Git version"
+    else
+        print_error "Failed to update from Git"
+        exit 1
+    fi
+    
+    # Restore backed up files
+    if [ -f ".env.backup" ]; then
+        cp .env.backup .env
+        rm .env.backup
+        print_status "Restored .env file"
+    fi
+    
+    if [ -f "docker-compose.yml.backup" ]; then
+        cp docker-compose.yml.backup docker-compose.yml
+        rm docker-compose.yml.backup
+        print_status "Restored docker-compose.yml"
+    fi
+    
+    # Make scripts executable
+    chmod +x update-server.sh
+    chmod +x deploy-update.sh 2>/dev/null || true
+    
+    echo -e "${GREEN}✅ Git repository updated successfully${NC}\n"
+fi
 
 # Check if docker-compose.yml exists
 if [ ! -f "$COMPOSE_FILE" ]; then
