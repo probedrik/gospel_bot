@@ -146,7 +146,7 @@ def create_navigation_keyboard(has_previous: bool = False, has_next: bool = True
         if len(navigation_buttons) == 1:
             buttons.append([navigation_buttons[0]])
         else:
-        buttons.append(navigation_buttons)
+            buttons.append(navigation_buttons)
 
     # Кнопка для добавления/удаления закладок
     bookmark_data = "bookmark_info" if is_bookmarked else "add_bookmark"
