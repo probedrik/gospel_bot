@@ -54,3 +54,4 @@ credentials/
 # Don't exclude data directory structure
 !data/.gitkeep
 !logs/.gitkeep 
+my.md

@@ -344,3 +344,91 @@ class BibleData:
 
 # Создаем глобальный экземпляр класса для использования в других модулях
 bible_data = BibleData()
+
+
+def get_english_book_abbreviation(book_id):
+    """
+    Получает английское сокращение книги по ID для использования в комментариях и ИИ.
+    Возвращает английское сокращение или None, если не найдено.
+    """
+    en_to_ru = {
+        "Gen": "Быт", "Exod": "Исх", "Lev": "Лев", "Num": "Чис", "Deut": "Втор",
+        "Josh": "Нав", "Judg": "Суд", "Ruth": "Руф",
+        "1Sam": "1Цар", "2Sam": "2Цар", "1Kgs": "3Цар", "2Kgs": "4Цар",
+        "1Chr": "1Пар", "2Chr": "2Пар", "Ezra": "Езд", "Neh": "Неем",
+        "Esth": "Есф", "Job": "Иов", "Ps": "Пс", "Prov": "Прит",
+        "Eccl": "Еккл", "Song": "Песн", "Isa": "Ис", "Jer": "Иер",
+        "Lam": "Плач", "Ezek": "Иез", "Dan": "Дан", "Hos": "Ос",
+        "Joel": "Иоил", "Amos": "Ам", "Obad": "Авд", "Jonah": "Ион",
+        "Mic": "Мих", "Nah": "Наум", "Hab": "Авв", "Zeph": "Соф",
+        "Hag": "Агг", "Zech": "Зах", "Mal": "Мал",
+        "Matt": "Мф", "Mark": "Мк", "Luke": "Лк", "John": "Ин",
+        "Acts": "Деян", "Jas": "Иак", "1Pet": "1Пет", "2Pet": "2Пет",
+        "1John": "1Ин", "2John": "2Ин", "3John": "3Ин", "Jude": "Иуд",
+        "Rom": "Рим", "1Cor": "1Кор", "2Cor": "2Кор",
+        "Gal": "Гал", "Eph": "Еф", "Phil": "Флп", "Col": "Кол",
+        "1Thess": "1Фес", "2Thess": "2Фес", "1Tim": "1Тим",
+        "2Tim": "2Тим", "Titus": "Тит", "Phlm": "Флм", "Heb": "Евр", "Rev": "Откр"
+    }
+
+    # Получаем русское сокращение книги
+    book_abbr = None
+    for abbr, b_id in bible_data.book_abbr_dict.items():
+        if b_id == book_id:
+            book_abbr = abbr
+            break
+
+    if not book_abbr:
+        return None
+
+    # Ищем соответствующее английское сокращение
+    for en, ru in en_to_ru.items():
+        if ru == book_abbr:
+            return en
+
+    return None
+
+
+def create_chapter_action_buttons(book_id, chapter, en_book=None, exclude_ai=False):
+    """
+    Создает кнопки действий для главы (Толкование Лопухина и Разбор от ИИ).
+
+    Args:
+        book_id: ID книги
+        chapter: номер главы
+        en_book: английское сокращение книги (если None, будет определено автоматически)
+        exclude_ai: если True, исключает кнопку AI разбора
+
+    Returns:
+        list: Список кнопок для использования в клавиатуре
+    """
+    from aiogram.types import InlineKeyboardButton
+    from config.settings import ENABLE_LOPUKHIN_COMMENTARY
+    from config.ai_settings import ENABLE_GPT_EXPLAIN
+
+    if en_book is None:
+        en_book = get_english_book_abbreviation(book_id)
+
+    buttons = []
+
+    # Кнопка толкования Лопухина (только если есть en_book)
+    if ENABLE_LOPUKHIN_COMMENTARY and en_book:
+        buttons.append([
+            InlineKeyboardButton(
+                text="Толкование проф. Лопухина",
+                callback_data=f"open_commentary_{en_book}_{chapter}_0"
+            )
+        ])
+
+    # Кнопка ИИ разбора (только если включена функция и не исключена)
+    if ENABLE_GPT_EXPLAIN and not exclude_ai:
+        # Используем en_book если есть, иначе UNKNOWN
+        book_param = en_book if en_book else "UNKNOWN"
+        buttons.append([
+            InlineKeyboardButton(
+                text="🤖 Разбор от ИИ",
+                callback_data=f"gpt_explain_{book_param}_{chapter}_0"
+            )
+        ])
+
+    return buttons

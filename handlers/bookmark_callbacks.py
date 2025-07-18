@@ -117,18 +117,14 @@ async def add_bookmark(callback: CallbackQuery, state: FSMContext, db=None):
         has_previous = chapter > 1
         has_next = chapter < max_chapters
 
-        # Определяем статус добавления закладки
-        if bookmark_added_to_db:
-            status_text = "✅ Закладка добавлена в базу данных"
-        elif bookmark_added_to_state:
-            status_text = "⚠️ Закладка добавлена только в текущей сессии (не в базе данных)"
-        else:
-            status_text = "❌ Ошибка: закладка не была добавлена"
+        # Создаем кнопки действий для главы (исключаем AI кнопку если нужно)
+        from utils.bible_data import create_chapter_action_buttons
+        extra_buttons = create_chapter_action_buttons(book_id, chapter)
 
-        await callback.message.answer(
-            f"{status_text}: {display_text}",
+        # Редактируем существующее сообщение с навигацией, обновляя статус закладки
+        await callback.message.edit_reply_markup(
             reply_markup=create_navigation_keyboard(
-                has_previous, has_next, True)
+                has_previous, has_next, True, extra_buttons)
         )
 
         # Отображаем короткое уведомление
@@ -224,13 +220,17 @@ async def bookmark_info(callback: CallbackQuery, state: FSMContext, db=None):
         has_previous = chapter > 1
         has_next = chapter < max_chapters
 
+        # Создаем кнопки действий для главы
+        from utils.bible_data import create_chapter_action_buttons
+        extra_buttons = create_chapter_action_buttons(book_id, chapter)
+
         # Отправляем сообщение об успешном удалении
         await callback.answer("Закладка удалена")
 
         # Обновляем клавиатуру навигации
         await callback.message.edit_reply_markup(
             reply_markup=create_navigation_keyboard(
-                has_previous, has_next, False)
+                has_previous, has_next, False, extra_buttons)
         )
     except Exception as e:
         logger.error(f"Ошибка при удалении закладки: {e}", exc_info=True)
@@ -284,51 +284,9 @@ async def bookmark_selected(callback: CallbackQuery, state: FSMContext, db=None)
         for part in split_text(text):
             await callback.message.answer(part, parse_mode=parse_mode)
 
-        # Создаем дополнительные кнопки (толкование, ИИ)
-        extra_buttons = []
-        # Получаем английское сокращение для поиска в комментарии
-        en_book = None
-        en_to_ru = {
-            "Gen": "Быт", "Exod": "Исх", "Lev": "Лев", "Num": "Чис", "Deut": "Втор", "Josh": "Нав", "Judg": "Суд", "Ruth": "Руф",
-            "1Sam": "1Цар", "2Sam": "2Цар", "1Kgs": "3Цар", "2Kgs": "4Цар", "1Chr": "1Пар", "2Chr": "2Пар", "Ezra": "Езд", "Neh": "Неем",
-            "Esth": "Есф", "Job": "Иов", "Ps": "Пс", "Prov": "Прит", "Eccl": "Еккл", "Song": "Песн", "Isa": "Ис", "Jer": "Иер",
-            "Lam": "Плач", "Ezek": "Иез", "Dan": "Дан", "Hos": "Ос", "Joel": "Иоил", "Amos": "Ам", "Obad": "Авд", "Jonah": "Ион",
-            "Mic": "Мих", "Nah": "Наум", "Hab": "Авв", "Zeph": "Соф", "Hag": "Агг", "Zech": "Зах", "Mal": "Мал",
-            "Matt": "Мф", "Mark": "Мк", "Luke": "Лк", "John": "Ин", "Acts": "Деян", "Jas": "Иак", "1Pet": "1Пет", "2Pet": "2Пет",
-            "1John": "1Ин", "2John": "2Ин", "3John": "3Ин", "Jude": "Иуд", "Rom": "Рим", "1Cor": "1Кор", "2Cor": "2Кор",
-            "Gal": "Гал", "Eph": "Еф", "Phil": "Флп", "Col": "Кол", "1Thess": "1Фес", "2Thess": "2Фес", "1Tim": "1Тим",
-            "2Tim": "2Тим", "Titus": "Тит", "Phlm": "Флм", "Heb": "Евр", "Rev": "Откр"
-        }
-
-        book_abbr = None
-        for abbr, b_id in bible_data.book_abbr_dict.items():
-            if b_id == book_id:
-                book_abbr = abbr
-                break
-
-        for en, ru in en_to_ru.items():
-            if ru == book_abbr:
-                en_book = en
-                break
-
-        # Кнопка толкования Лопухина (проверяем глобальную настройку)
-        from config.settings import ENABLE_LOPUKHIN_COMMENTARY
-        if ENABLE_LOPUKHIN_COMMENTARY and en_book:
-            from aiogram.types import InlineKeyboardButton
-            extra_buttons.append([
-                InlineKeyboardButton(
-                    text="Толкование проф. Лопухина",
-                    callback_data=f"open_commentary_{en_book}_{chapter}_0"
-                )
-            ])
-            from config.ai_settings import ENABLE_GPT_EXPLAIN
-            if ENABLE_GPT_EXPLAIN:
-                extra_buttons.append([
-                    InlineKeyboardButton(
-                        text="🤖 Разбор от ИИ",
-                        callback_data=f"gpt_explain_{en_book}_{chapter}_0"
-                    )
-                ])
+        # Создаем кнопки действий для главы
+        from utils.bible_data import create_chapter_action_buttons
+        extra_buttons = create_chapter_action_buttons(book_id, chapter)
 
         # Отправляем объединенную клавиатуру навигации с дополнительными кнопками
         await callback.message.answer(

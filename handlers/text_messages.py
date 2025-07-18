@@ -282,58 +282,9 @@ async def chapter_input(message: Message, state: FSMContext, db=None):
         for part in split_text(text):
             await message.answer(part, parse_mode=parse_mode)
 
-        # Получаем английское сокращение для поиска в комментарии
-        en_book = None
-        en_to_ru = {
-            "Gen": "Быт", "Exod": "Исх", "Lev": "Лев", "Num": "Чис", "Deut": "Втор", "Josh": "Нав", "Judg": "Суд", "Ruth": "Руф",
-            "1Sam": "1Цар", "2Sam": "2Цар", "1Kgs": "3Цар", "2Kgs": "4Цар", "1Chr": "1Пар", "2Chr": "2Пар", "Ezra": "Езд", "Neh": "Неем",
-            "Esth": "Есф", "Job": "Иов", "Ps": "Пс", "Prov": "Прит", "Eccl": "Еккл", "Song": "Песн", "Isa": "Ис", "Jer": "Иер",
-            "Lam": "Плач", "Ezek": "Иез", "Dan": "Дан", "Hos": "Ос", "Joel": "Иоил", "Amos": "Ам", "Obad": "Авд", "Jonah": "Ион",
-            "Mic": "Мих", "Nah": "Наум", "Hab": "Авв", "Zeph": "Соф", "Hag": "Агг", "Zech": "Зах", "Mal": "Мал",
-            "Matt": "Мф", "Mark": "Мк", "Luke": "Лк", "John": "Ин", "Acts": "Деян", "Jas": "Иак", "1Pet": "1Пет", "2Pet": "2Пет",
-            "1John": "1Ин", "2John": "2Ин", "3John": "3Ин", "Jude": "Иуд", "Rom": "Рим", "1Cor": "1Кор", "2Cor": "2Кор",
-            "Gal": "Гал", "Eph": "Еф", "Phil": "Флп", "Col": "Кол", "1Thess": "1Фес", "2Thess": "2Фес", "1Tim": "1Тим",
-            "2Tim": "2Тим", "Titus": "Тит", "Phlm": "Флм", "Heb": "Евр", "Rev": "Откр"
-        }
-        for en, ru in en_to_ru.items():
-            if ru == book_abbr:
-                en_book = en
-                break
-        # Кнопки для главы: Толкование Лопухина и разбор от ИИ (всегда, даже если нет толкования)
-        en_book = None
-        en_to_ru = {
-            "Gen": "Быт", "Exod": "Исх", "Lev": "Лев", "Num": "Чис", "Deut": "Втор", "Josh": "Нав", "Judg": "Суд", "Ruth": "Руф",
-            "1Sam": "1Цар", "2Sam": "2Цар", "1Kgs": "3Цар", "2Kgs": "4Цар", "1Chr": "1Пар", "2Chr": "2Пар", "Ezra": "Езд", "Neh": "Неем",
-            "Esth": "Есф", "Job": "Иов", "Ps": "Пс", "Prov": "Прит", "Eccl": "Еккл", "Song": "Песн", "Isa": "Ис", "Jer": "Иер",
-            "Lam": "Плач", "Ezek": "Иез", "Dan": "Дан", "Hos": "Ос", "Joel": "Иоил", "Amos": "Ам", "Obad": "Авд", "Jonah": "Ион",
-            "Mic": "Мих", "Nah": "Наум", "Hab": "Авв", "Zeph": "Соф", "Hag": "Агг", "Zech": "Зах", "Mal": "Мал",
-            "Matt": "Мф", "Mark": "Мк", "Luke": "Лк", "John": "Ин", "Acts": "Деян", "Jas": "Иак", "1Pet": "1Пет", "2Pet": "2Пет",
-            "1John": "1Ин", "2John": "2Ин", "3John": "3Ин", "Jude": "Иуд", "Rom": "Рим", "1Cor": "1Кор", "2Cor": "2Кор",
-            "Gal": "Гал", "Eph": "Еф", "Phil": "Флп", "Col": "Кол", "1Thess": "1Фес", "2Thess": "2Фес", "1Tim": "1Тим",
-            "2Tim": "2Тим", "Titus": "Тит", "Phlm": "Флм", "Heb": "Евр", "Rev": "Откр"
-        }
-        for en, ru in en_to_ru.items():
-            if ru == book_abbr:
-                en_book = en
-                break
-        buttons = []
-        extra_buttons = []
-        # Кнопка толкования Лопухина (проверяем глобальную настройку)
-        from config.settings import ENABLE_LOPUKHIN_COMMENTARY
-        if ENABLE_LOPUKHIN_COMMENTARY and en_book:
-            extra_buttons.append([
-                InlineKeyboardButton(
-                    text="Толкование проф. Лопухина",
-                    callback_data=f"open_commentary_{en_book}_{chapter}_0"
-                )
-            ])
-            if ENABLE_GPT_EXPLAIN:
-                extra_buttons.append([
-                    InlineKeyboardButton(
-                        text="🤖 Разбор от ИИ",
-                        callback_data=f"gpt_explain_{en_book}_{chapter}_0"
-                    )
-                ])
+        # Создаем кнопки действий для главы
+        from utils.bible_data import create_chapter_action_buttons
+        extra_buttons = create_chapter_action_buttons(book_id, chapter)
 
         # Отправляем объединенную клавиатуру навигации с дополнительными кнопками
         await message.answer(
@@ -904,6 +855,12 @@ async def gpt_explain_callback(callback: CallbackQuery, state: FSMContext = None
     ru_book = bible_data.book_synonyms.get(book.lower(), book)
     book_id = bible_data.get_book_id(ru_book)
     reference = f"{ru_book} {chapter}:{verse}" if verse != 0 else f"{ru_book} {chapter}"
+
+    # Обновляем состояние для корректной навигации
+    if book_id and state:
+        from middleware.state import set_chosen_book, set_current_chapter
+        await set_chosen_book(state, book_id)
+        await set_current_chapter(state, chapter)
     if verse == 0:
         # Исправление: передаём числовой ID книги, а не строку
         if not book_id:
@@ -930,8 +887,53 @@ async def gpt_explain_callback(callback: CallbackQuery, state: FSMContext = None
         response = await ask_gpt_explain(prompt)
         formatted, opts = format_ai_or_commentary(
             response, title="🤖 Разбор от ИИ")
-        for part in split_text(formatted):
-            msg = await callback.message.answer(part, **opts)
+
+        # Разбиваем на части и отправляем
+        text_parts = list(split_text(formatted))
+        for idx, part in enumerate(text_parts):
+            if idx == len(text_parts) - 1:  # Последняя часть - добавляем кнопки
+                # Создаем кнопки без кнопки AI (exclude_ai=True)
+                from utils.bible_data import create_chapter_action_buttons
+                action_buttons = create_chapter_action_buttons(
+                    book_id, chapter, book, exclude_ai=True)
+
+                if verse == 0:  # Для главы - добавляем навигацию
+                    # Навигация между главами
+                    has_previous = chapter > 1
+                    max_chapter = bible_data.max_chapters.get(book_id, 0)
+                    has_next = chapter < max_chapter
+
+                    # Проверяем закладки
+                    from middleware.state import get_bookmarks
+                    bookmarks = await get_bookmarks(state)
+                    book_name = bible_data.get_book_name(book_id)
+                    bookmark_key = f"{book_name} {chapter}"
+                    is_bookmarked = bookmark_key in bookmarks
+
+                    # Создаем полную клавиатуру навигации с дополнительными кнопками
+                    from keyboards.main import create_navigation_keyboard
+                    keyboard = create_navigation_keyboard(
+                        has_previous, has_next, is_bookmarked, action_buttons)
+
+                    msg = await callback.message.answer(part, reply_markup=keyboard, **opts)
+                else:  # Для стиха - только кнопки действий
+                    if action_buttons:
+                        # Добавляем кнопку "Открыть всю главу"
+                        ru_book_abbr = bible_data.get_book_name(book_id)
+                        action_buttons.insert(0, [
+                            InlineKeyboardButton(
+                                text="Открыть всю главу",
+                                callback_data=f"open_chapter_{ru_book_abbr}_{chapter}"
+                            )
+                        ])
+                        keyboard = InlineKeyboardMarkup(
+                            inline_keyboard=action_buttons)
+                        msg = await callback.message.answer(part, reply_markup=keyboard, **opts)
+                    else:
+                        msg = await callback.message.answer(part, **opts)
+            else:
+                msg = await callback.message.answer(part, **opts)
+
             if state:
                 await state.update_data(last_topic_ai_msg_id=msg.message_id)
     except Exception as e:
