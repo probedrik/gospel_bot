@@ -95,19 +95,22 @@ class DatabaseMiddleware(BaseMiddleware):
         if hasattr(event, 'from_user') and event.from_user:
             user_id = event.from_user.id
 
-        # Убеждаемся, что объект БД доступен и файл существует
-        if not hasattr(db_manager, 'db_file'):
-            logger.error(
-                "Ошибка: объект db_manager не содержит атрибута db_file")
-        elif not os.path.exists(db_manager.db_file):
-            logger.error(
-                f"Ошибка: файл БД не существует: {db_manager.db_file}")
-            # Принудительно создаем таблицы
-            try:
-                db_manager._create_tables()
-                logger.info("Принудительно вызвано создание таблиц в БД")
-            except Exception as e:
-                logger.error(f"Ошибка при принудительном создании таблиц: {e}")
+        # Убеждаемся, что объект БД доступен (только для SQLite)
+        if not db_manager.is_postgres:
+            if not hasattr(db_manager, 'db_file'):
+                logger.error(
+                    "Ошибка: объект db_manager не содержит атрибута db_file")
+            elif db_manager.db_file and not os.path.exists(db_manager.db_file):
+                logger.error(
+                    f"Ошибка: файл БД не существует: {db_manager.db_file}")
+                # Принудительно создаем таблицы
+                try:
+                    db_manager._create_tables()
+                    logger.info("Принудительно вызвано создание таблиц в БД")
+                except Exception as e:
+                    logger.error(
+                        f"Ошибка при принудительном создании таблиц: {e}")
+        # Для PostgreSQL проверки файла не нужны
 
         # Добавляем объект db в данные обработчика
         data["db"] = db_manager
