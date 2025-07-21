@@ -355,6 +355,8 @@ async def main():
                         help='Пользователь PostgreSQL (или POSTGRES_USER env)')
     parser.add_argument('--postgres-password', default=None,
                         help='Пароль PostgreSQL (или POSTGRES_PASSWORD env)')
+    parser.add_argument('--yes', '-y', action='store_true',
+                        help='Автоматически подтвердить миграцию без запроса')
 
     args = parser.parse_args()
 
@@ -388,10 +390,13 @@ async def main():
     logger.info(f"   CSV планы: {args.plans_csv}")
 
     # Подтверждение миграции
-    confirm = input("\n❓ Продолжить миграцию? (y/N): ")
-    if confirm.lower() not in ['y', 'yes', 'да']:
-        logger.info("❌ Миграция отменена")
-        return
+    if not args.yes:
+        confirm = input("\n❓ Продолжить миграцию? (y/N): ")
+        if confirm.lower() not in ['y', 'yes', 'да']:
+            logger.info("❌ Миграция отменена")
+            return
+    else:
+        logger.info("✅ Автоматическое подтверждение (--yes флаг)")
 
     # Запускаем миграцию
     await migrator.migrate_all()

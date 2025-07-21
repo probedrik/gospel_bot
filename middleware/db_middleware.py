@@ -6,7 +6,7 @@ import os
 from typing import Any, Awaitable, Callable, Dict
 from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject
-from database.db_manager import db_manager
+from database.universal_manager import universal_db_manager as db_manager
 
 # Инициализация логгера
 logger = logging.getLogger(__name__)
@@ -23,6 +23,13 @@ class DatabaseMiddleware(BaseMiddleware):
     def _check_db(self):
         """Проверяет доступность БД и выводит информацию о ней"""
         try:
+            # Для PostgreSQL проверка не нужна (соединения проверяются асинхронно)
+            if db_manager.is_postgres:
+                logger.info(
+                    "🐘 Используется PostgreSQL, проверка доступности будет выполнена при инициализации")
+                return
+
+            # Для SQLite выполняем стандартные проверки
             db_file = db_manager.db_file
             db_dir = os.path.dirname(db_file)
 

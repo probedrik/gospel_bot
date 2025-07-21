@@ -58,22 +58,34 @@ docker-compose -f docker-compose.postgres.yml up -d
 ```
 
 ### 4. **Выполните миграцию данных**
+
+#### **Вариант A: Если есть Python на сервере**
 ```bash
 # Установите зависимости для миграции
 pip install asyncpg
 
 # Запустите миграцию
 python migrate_to_postgres.py
+```
 
-# Или с параметрами
-python migrate_to_postgres.py \
-  --sqlite-db data/bible_bot.db \
-  --plans-csv data/plans_csv_final \
-  --postgres-host localhost \
-  --postgres-port 5432 \
-  --postgres-db gospel_bot \
-  --postgres-user postgres \
-  --postgres-password gospel123
+#### **Вариант B: Только Docker (рекомендуется для серверов)**
+```bash
+# Windows PowerShell
+.\docker-migration.ps1
+
+# Linux/macOS bash
+./docker-migration.sh
+
+# Или вручную:
+docker run --rm \
+  --network gospel_default \
+  -v "$(pwd)":/workspace \
+  -w /workspace \
+  -e POSTGRES_HOST=postgres \
+  python:3.11-slim bash -c "
+    pip install asyncpg pandas &&
+    python migrate_to_postgres.py --postgres-host postgres --yes
+  "
 ```
 
 ## 🔧 **Ручная настройка PostgreSQL**
@@ -120,7 +132,11 @@ pip install asyncpg
 
 ### 5. **Выполните миграцию**
 ```bash
+# С интерактивным подтверждением
 python migrate_to_postgres.py
+
+# Автоматически (без подтверждения)
+python migrate_to_postgres.py --yes
 ```
 
 ## 📊 **Что мигрируется**

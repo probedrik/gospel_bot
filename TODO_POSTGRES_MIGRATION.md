@@ -45,7 +45,18 @@ docker-compose down
 docker-compose -f docker-compose.postgres.yml up -d
 ```
 
-### 4. **Установите зависимости и выполните миграцию**
+### 4. **Выполните миграцию**
+
+#### **Если нет Python на сервере (только Docker):**
+```bash
+# Windows PowerShell
+.\docker-migration.ps1
+
+# Linux/macOS
+./docker-migration.sh
+```
+
+#### **Если есть Python:**
 ```bash
 # Установите asyncpg
 pip install asyncpg
