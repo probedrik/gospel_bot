@@ -118,6 +118,44 @@ class UniversalDatabaseManager:
         """Получает прогресс частей дня"""
         return await self.manager.get_reading_part_progress(user_id, plan_id, day)
 
+    async def is_reading_day_completed(self, user_id: int, plan_id: str, day: int):
+        """Проверяет, завершен ли день плана чтения"""
+        return await self.manager.is_reading_day_completed(user_id, plan_id, day)
+
+    # Методы для совместимости с handlers
+    async def get_user_reading_plan(self, user_id: int, plan_id: str):
+        """Получает план чтения пользователя"""
+        return await self.manager.get_user_reading_plan(user_id, plan_id)
+
+    async def set_user_reading_plan(self, user_id: int, plan_id: str, day: int = 1):
+        """Устанавливает план чтения для пользователя"""
+        return await self.manager.set_user_reading_plan(user_id, plan_id, day)
+
+    async def get_user_reading_plans(self, user_id: int):
+        """Получает все планы чтения пользователя"""
+        return await self.manager.get_user_reading_plans(user_id)
+
+    async def update_reading_plan_day(self, user_id: int, plan_id: str, day: int):
+        """Обновляет текущий день плана чтения"""
+        return await self.manager.update_reading_plan_day(user_id, plan_id, day)
+
+    async def is_bookmark_exists(self, user_id: int, reference: str):
+        """Проверяет существование закладки по ссылке"""
+        return await self.manager.is_bookmark_exists(user_id, reference)
+
+    # Алиасы для совместимости
+    async def get_reading_progress_async(self, user_id: int, plan_id: str):
+        """Алиас для get_reading_progress"""
+        return await self.get_reading_progress(user_id, plan_id)
+
+    async def is_reading_day_completed_async(self, user_id: int, plan_id: str, day: int):
+        """Алиас для is_reading_day_completed"""
+        return await self.is_reading_day_completed(user_id, plan_id, day)
+
+    async def mark_reading_day_completed_async(self, user_id: int, plan_id: str, day: int):
+        """Алиас для mark_reading_day_completed"""
+        return await self.mark_reading_day_completed(user_id, plan_id, day)
+
     # Методы для работы с планами чтения (только для PostgreSQL)
     async def get_reading_plans(self):
         """Получает все планы чтения (только PostgreSQL)"""

@@ -168,6 +168,18 @@ class PostgreSQLManager:
                 )
                 ''')
 
+                # Таблица планов чтения пользователей
+                await conn.execute('''
+                CREATE TABLE IF NOT EXISTS user_reading_plans (
+                    user_id BIGINT REFERENCES users(user_id) ON DELETE CASCADE,
+                    plan_id TEXT REFERENCES reading_plans(plan_id) ON DELETE CASCADE,
+                    current_day INTEGER DEFAULT 1,
+                    started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (user_id, plan_id)
+                )
+                ''')
+
                 # Индексы для улучшения производительности
                 await conn.execute('''
                 CREATE INDEX IF NOT EXISTS idx_reading_progress_user_plan 
@@ -361,16 +373,159 @@ class PostgreSQLManager:
             return False
 
     async def get_ai_usage(self, user_id: int, date: datetime = None) -> int:
-        """Получает количество использований ИИ за день"""
+        """Получает количество использований ИИ за указанную дату"""
         if date is None:
             date = datetime.now().date()
 
-        async with self.pool.acquire() as conn:
-            row = await conn.fetchrow('''
-                SELECT count FROM ai_limits 
+        try:
+            query = """
+                SELECT daily_usage FROM ai_limits 
                 WHERE user_id = $1 AND date = $2
-            ''', user_id, date)
-            return row['count'] if row else 0
+            """
+            result = await self.pool.fetchval(query, user_id, date)
+            return result if result is not None else 0
+        except Exception as e:
+            logger.error(f"Ошибка получения использования ИИ: {e}")
+            return 0
+
+    async def get_reading_progress(self, user_id: int, plan_id: str) -> List[int]:
+        """Получает список завершенных дней для плана чтения"""
+        try:
+            query = """
+                SELECT day_number FROM reading_progress 
+                WHERE user_id = $1 AND plan_id = $2 AND completed = TRUE
+                ORDER BY day_number
+            """
+            rows = await self.pool.fetch(query, user_id, plan_id)
+            return [row['day_number'] for row in rows]
+        except Exception as e:
+            logger.error(f"Ошибка получения прогресса чтения: {e}")
+            return []
+
+    async def is_reading_day_completed(self, user_id: int, plan_id: str, day: int) -> bool:
+        """Проверяет, завершен ли день плана чтения"""
+        try:
+            query = """
+                SELECT completed FROM reading_progress 
+                WHERE user_id = $1 AND plan_id = $2 AND day_number = $3
+            """
+            result = await self.pool.fetchval(query, user_id, plan_id, day)
+            return result is True
+        except Exception as e:
+            logger.error(f"Ошибка проверки завершения дня: {e}")
+            return False
+
+    async def get_reading_part_progress(self, user_id: int, plan_id: str, day: int) -> List[int]:
+        """Получает список завершенных частей дня"""
+        try:
+            query = """
+                SELECT part_index FROM reading_parts_progress 
+                WHERE user_id = $1 AND plan_id = $2 AND day_number = $3 AND completed = TRUE
+                ORDER BY part_index
+            """
+            rows = await self.pool.fetch(query, user_id, plan_id, day)
+            return [row['part_index'] for row in rows]
+        except Exception as e:
+            logger.error(f"Ошибка получения прогресса частей: {e}")
+            return []
+
+    # Методы для совместимости с handlers
+    async def get_user_reading_plan(self, user_id: int, plan_id: str) -> Optional[Dict]:
+        """Получает план чтения пользователя"""
+        try:
+            query = """
+                SELECT rp.*, up.current_day, up.started_at
+                FROM reading_plans rp
+                LEFT JOIN user_reading_plans up ON rp.id = up.plan_id AND up.user_id = $1
+                WHERE rp.id = $2
+            """
+            row = await self.pool.fetchrow(query, user_id, plan_id)
+            if row:
+                return dict(row)
+            return None
+        except Exception as e:
+            logger.error(f"Ошибка получения плана пользователя: {e}")
+            return None
+
+    async def set_user_reading_plan(self, user_id: int, plan_id: str, day: int = 1) -> bool:
+        """Устанавливает план чтения для пользователя"""
+        try:
+            query = """
+                INSERT INTO user_reading_plans (user_id, plan_id, current_day, started_at)
+                VALUES ($1, $2, $3, NOW())
+                ON CONFLICT (user_id, plan_id) DO UPDATE SET 
+                    current_day = $3, 
+                    updated_at = NOW()
+            """
+            await self.pool.execute(query, user_id, plan_id, day)
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка установки плана пользователя: {e}")
+            return False
+
+    async def get_user_reading_plans(self, user_id: int) -> List[Dict]:
+        """Получает все планы чтения пользователя"""
+        try:
+            query = """
+                SELECT rp.*, up.current_day, up.started_at
+                FROM user_reading_plans up
+                JOIN reading_plans rp ON up.plan_id = rp.id
+                WHERE up.user_id = $1
+                ORDER BY up.started_at DESC
+            """
+            rows = await self.pool.fetch(query, user_id)
+            return [dict(row) for row in rows]
+        except Exception as e:
+            logger.error(f"Ошибка получения планов пользователя: {e}")
+            return []
+
+    async def update_reading_plan_day(self, user_id: int, plan_id: str, day: int) -> bool:
+        """Обновляет текущий день плана чтения"""
+        try:
+            query = """
+                UPDATE user_reading_plans 
+                SET current_day = $3, updated_at = NOW()
+                WHERE user_id = $1 AND plan_id = $2
+            """
+            await self.pool.execute(query, user_id, plan_id, day)
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка обновления дня плана: {e}")
+            return False
+
+    async def is_bookmark_exists(self, user_id: int, reference: str) -> bool:
+        """Проверяет существование закладки по ссылке"""
+        try:
+            # Парсим reference вида "book_id:chapter"
+            if ':' in reference:
+                book_id, chapter = reference.split(':')
+                book_id, chapter = int(book_id), int(chapter)
+            else:
+                return False
+
+            query = """
+                SELECT 1 FROM bookmarks 
+                WHERE user_id = $1 AND book_id = $2 AND chapter = $3
+                LIMIT 1
+            """
+            result = await self.pool.fetchval(query, user_id, book_id, chapter)
+            return result is not None
+        except Exception as e:
+            logger.error(f"Ошибка проверки закладки: {e}")
+            return False
+
+    # Алиасы для совместимости
+    async def get_reading_progress_async(self, user_id: int, plan_id: str) -> List[int]:
+        """Алиас для get_reading_progress"""
+        return await self.get_reading_progress(user_id, plan_id)
+
+    async def is_reading_day_completed_async(self, user_id: int, plan_id: str, day: int) -> bool:
+        """Алиас для is_reading_day_completed"""
+        return await self.is_reading_day_completed(user_id, plan_id, day)
+
+    async def mark_reading_day_completed_async(self, user_id: int, plan_id: str, day: int) -> bool:
+        """Алиас для mark_reading_day_completed"""
+        return await self.mark_reading_day_completed(user_id, plan_id, day)
 
 
 # Создаем глобальный экземпляр

@@ -1200,7 +1200,7 @@ async def reading_plan_days(callback: CallbackQuery, state: FSMContext):
     await state.update_data(current_reading_plan=plan_id)
     user_id = callback.from_user.id
     from database.universal_manager import universal_db_manager as db_manager
-    completed_days = set(db_manager.get_reading_progress(user_id, plan_id))
+    completed_days = set(await db_manager.get_reading_progress(user_id, plan_id))
     total = len(plan.days)
     done = len(completed_days)
     header = f"<b>План:</b> {plan.title}\n<b>Прогресс:</b> {done} из {total} дней"
@@ -1320,7 +1320,7 @@ async def reading_plan_day(callback: CallbackQuery, state: FSMContext):
 
     user_id = callback.from_user.id
     from database.universal_manager import universal_db_manager as db_manager
-    completed = db_manager.is_reading_day_completed(user_id, plan_id, day)
+    completed = await db_manager.is_reading_day_completed(user_id, plan_id, day)
 
     # Разбиваем чтение на части по символу ";"
     parts = [p.strip() for p in reading_text.split(';') if p.strip()]
@@ -1488,7 +1488,7 @@ async def mark_reading_done(callback: CallbackQuery):
     user_id = callback.from_user.id
 
     # Отмечаем день как прочитанный в базе данных
-    db_manager.mark_reading_day_completed(user_id, plan_id, day)
+    await db_manager.mark_reading_day_completed(user_id, plan_id, day)
 
     # Обновляем кнопку
     await callback.answer("✅ День отмечен как прочитанный!")
@@ -1511,7 +1511,7 @@ async def mark_reading_done(callback: CallbackQuery):
         return
 
     # Проверяем новый статус
-    completed = db_manager.is_reading_day_completed(user_id, plan_id, day)
+    completed = await db_manager.is_reading_day_completed(user_id, plan_id, day)
 
     # Разбиваем чтение на части по символу ";"
     parts = [p.strip() for p in reading_text.split(';') if p.strip()]
@@ -1561,7 +1561,7 @@ async def mark_reading_part_done(callback: CallbackQuery):
     user_id = callback.from_user.id
 
     # Отмечаем часть как прочитанную в базе данных
-    db_manager.mark_reading_part_completed(user_id, plan_id, day, part_idx)
+    await db_manager.mark_reading_part_completed(user_id, plan_id, day, part_idx)
 
     await callback.answer("✅ Часть отмечена как прочитанная!")
 
