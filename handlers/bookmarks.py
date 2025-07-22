@@ -32,7 +32,7 @@ async def show_bookmarks(message: Message, state: FSMContext, db=None):
     logger.info(f"Пользователь {user_id} запросил свои закладки")
 
     # Используем напрямую менеджер БД
-    from database.db_manager import db_manager
+    from database.universal_manager import universal_db_manager as db_manager
 
     db_bookmarks = []
     state_bookmarks = {}

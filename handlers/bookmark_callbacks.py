@@ -36,7 +36,7 @@ async def add_bookmark(callback: CallbackQuery, state: FSMContext, db=None):
         f"Вызван обработчик добавления закладки пользователем {user_id}")
 
     # ВАЖНО: Используем напрямую менеджер БД, минуя middleware
-    from database.db_manager import db_manager
+    from database.universal_manager import universal_db_manager as db_manager
 
     # Получаем выбранную книгу и главу
     book_id = await get_chosen_book(state)
@@ -144,7 +144,7 @@ async def clear_bookmarks(callback: CallbackQuery, state: FSMContext, db=None):
     logger.info(f"Вызван обработчик очистки закладок пользователем {user_id}")
 
     # Используем напрямую менеджер БД
-    from database.db_manager import db_manager
+    from database.universal_manager import universal_db_manager as db_manager
 
     try:
         # Очищаем закладки напрямую в БД
@@ -178,7 +178,7 @@ async def bookmark_info(callback: CallbackQuery, state: FSMContext, db=None):
     logger.info(f"Вызван обработчик удаления закладки пользователем {user_id}")
 
     # Используем напрямую менеджер БД
-    from database.db_manager import db_manager
+    from database.universal_manager import universal_db_manager as db_manager
 
     book_id = await get_chosen_book(state)
     chapter = await get_current_chapter(state)
@@ -316,7 +316,7 @@ async def add_bookmark_from_plan(callback: CallbackQuery, state: FSMContext):
         await callback.answer("Ошибка данных закладки")
         return
     book_id, chapter = int(m.group(1)), int(m.group(2))
-    from database.db_manager import db_manager
+    from database.universal_manager import universal_db_manager as db_manager
     user_id = callback.from_user.id
     book_name = bible_data.get_book_name(book_id)
     display_text = f"{book_name} {chapter}"

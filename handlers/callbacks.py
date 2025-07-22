@@ -352,7 +352,7 @@ async def is_chapter_bookmarked(user_id: int, book_id: int, chapter: int, db=Non
     Returns:
         True, если глава в закладках, иначе False
     """
-    from database.db_manager import db_manager
+    from database.universal_manager import universal_db_manager as db_manager
 
     try:
         # Получаем все закладки пользователя напрямую из db_manager

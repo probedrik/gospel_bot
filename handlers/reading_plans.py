@@ -15,7 +15,7 @@ from keyboards.main import (
     get_main_keyboard
 )
 from services.reading_plans import reading_plans_service
-from database.db_manager import db_manager
+from database.universal_manager import universal_db_manager as db_manager
 from utils.api_client import bible_api
 from utils.bible_data import bible_data
 from middleware.state import get_current_translation

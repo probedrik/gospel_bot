@@ -12,7 +12,7 @@ from keyboards.main import get_main_keyboard, create_book_keyboard
 from utils.api_client import bible_api
 from utils.bible_data import bible_data
 from middleware.state import set_page, get_current_translation, get_chosen_book, get_current_chapter, get_bookmarks
-from database.db_manager import db_manager
+from database.universal_manager import universal_db_manager as db_manager
 from aiogram import Router, F
 from config.ai_settings import AI_OWNER_ID, AI_DAILY_LIMIT
 
@@ -195,7 +195,7 @@ async def test_db_write(message: Message):
     """Тестовый обработчик для прямой записи в БД"""
     user_id = message.from_user.id
     try:
-        from database.db_manager import db_manager
+        from database.universal_manager import universal_db_manager as db_manager
 
         # Путь к файлу БД
         db_file = db_manager.db_file
@@ -236,7 +236,7 @@ async def direct_bookmark(message: Message, state: FSMContext):
     user_id = message.from_user.id
     try:
         # Импортируем менеджер БД напрямую
-        from database.db_manager import db_manager
+        from database.universal_manager import universal_db_manager as db_manager
 
         # Получаем выбранную книгу и главу из состояния
         # Теперь state передается правильно как аргумент функции
@@ -289,7 +289,7 @@ async def direct_bookmark(message: Message, state: FSMContext):
 async def check_db(message: Message):
     """Проверяет доступность БД и выводит отчет"""
     try:
-        from database.db_manager import db_manager
+        from database.universal_manager import universal_db_manager as db_manager
 
         # Выполняем проверку
         result = await db_manager.check_db_access()
@@ -340,7 +340,7 @@ async def check_db(message: Message):
 async def repair_db_command(message: Message):
     """Пытается восстановить БД"""
     try:
-        from database.db_manager import db_manager
+        from database.universal_manager import universal_db_manager as db_manager
 
         # Сначала проверяем БД
         check_result = await db_manager.check_db_access()
@@ -393,7 +393,7 @@ async def save_bookmarks_to_db(message: Message, state: FSMContext):
     user_id = message.from_user.id
     try:
         # Импортируем напрямую
-        from database.db_manager import db_manager
+        from database.universal_manager import universal_db_manager as db_manager
 
         # Получаем закладки из состояния
         state_bookmarks = await get_bookmarks(state)
@@ -504,7 +504,7 @@ async def reset_db_command(message: Message, state: FSMContext):
     user_id = message.from_user.id
     try:
         # Импортируем все необходимое
-        from database.db_manager import db_manager
+        from database.universal_manager import universal_db_manager as db_manager
         import os
         import sqlite3
         from datetime import datetime
@@ -738,7 +738,7 @@ async def admin_panel_refresh(callback: CallbackQuery):
 
 @router.callback_query(F.data == "admin_ai_stats")
 async def admin_ai_stats(callback: CallbackQuery):
-    from database.db_manager import db_manager
+    from database.universal_manager import universal_db_manager as db_manager
     import datetime
     today = datetime.date.today().isoformat()
     # Получить топ-10 пользователей по количеству ИИ-запросов за сегодня
@@ -752,7 +752,7 @@ async def admin_ai_stats(callback: CallbackQuery):
 
 @router.callback_query(F.data == "admin_ai_top")
 async def admin_ai_top(callback: CallbackQuery):
-    from database.db_manager import db_manager
+    from database.universal_manager import universal_db_manager as db_manager
     # Получить топ-10 пользователей за всё время
     stats = await db_manager.get_ai_stats_alltime(limit=10)
     text = "<b>Топ-10 пользователей по ИИ-запросам (всё время):</b>\n"
@@ -800,7 +800,7 @@ async def admin_ai_reset_userid(message: Message):
         return
     import datetime
     today = datetime.date.today().isoformat()
-    from database.db_manager import db_manager
+    from database.universal_manager import universal_db_manager as db_manager
     await db_manager.reset_ai_limit(user_id, today)
     await message.answer(f"Лимит ИИ-запросов для пользователя {user_id} сброшен на сегодня.")
     del _admin_wait_reset

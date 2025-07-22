@@ -31,7 +31,7 @@ from config.settings import ENABLE_WORD_SEARCH
 from handlers.verse_reference import get_verse_by_reference
 from utils.topics import get_topics_list, get_verses_for_topic
 from utils.lopukhin_commentary import lopukhin_commentary
-from database.db_manager import db_manager
+from database.universal_manager import universal_db_manager as db_manager
 
 import datetime
 
@@ -1199,7 +1199,7 @@ async def reading_plan_days(callback: CallbackQuery, state: FSMContext):
         return
     await state.update_data(current_reading_plan=plan_id)
     user_id = callback.from_user.id
-    from database.db_manager import db_manager
+    from database.universal_manager import universal_db_manager as db_manager
     completed_days = set(db_manager.get_reading_progress(user_id, plan_id))
     total = len(plan.days)
     done = len(completed_days)
@@ -1319,7 +1319,7 @@ async def reading_plan_day(callback: CallbackQuery, state: FSMContext):
         return
 
     user_id = callback.from_user.id
-    from database.db_manager import db_manager
+    from database.universal_manager import universal_db_manager as db_manager
     completed = db_manager.is_reading_day_completed(user_id, plan_id, day)
 
     # Разбиваем чтение на части по символу ";"
@@ -1410,7 +1410,7 @@ async def reading_plan_text(callback: CallbackQuery, state: FSMContext):
         user_id = callback.from_user.id
 
         # Проверяем, прочитана ли эта часть
-        from database.db_manager import db_manager
+        from database.universal_manager import universal_db_manager as db_manager
         part_completed = db_manager.is_reading_part_completed(
             user_id, plan_id, day, part_idx)
 
@@ -1476,7 +1476,7 @@ async def back_to_reading_plans(callback: CallbackQuery, state: FSMContext):
 async def mark_reading_done(callback: CallbackQuery):
     """Отметить день как прочитанный"""
     import re
-    from database.db_manager import db_manager
+    from database.universal_manager import universal_db_manager as db_manager
 
     m = re.match(r'^readingdone_(.+)_(\d+)$', callback.data)
     if not m:
@@ -1548,7 +1548,7 @@ async def mark_reading_done(callback: CallbackQuery):
 async def mark_reading_part_done(callback: CallbackQuery):
     """Отметить часть дня как прочитанную"""
     import re
-    from database.db_manager import db_manager
+    from database.universal_manager import universal_db_manager as db_manager
 
     m = re.match(r'^readingpartdone_(.+)_(\d+)_(\d+)$', callback.data)
     if not m:
@@ -1649,7 +1649,7 @@ async def reading_ai_callback(callback: CallbackQuery, state: FSMContext):
         for idx, part in enumerate(text_parts):
             if idx == len(text_parts) - 1:  # Последняя часть - добавляем кнопки
                 # Проверяем, прочитана ли эта часть
-                from database.db_manager import db_manager
+                from database.universal_manager import universal_db_manager as db_manager
                 user_id = callback.from_user.id
                 part_completed = db_manager.is_reading_part_completed(
                     user_id, plan_id, day, part_idx)
