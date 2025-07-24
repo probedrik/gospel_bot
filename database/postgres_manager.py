@@ -5,6 +5,7 @@
 import asyncpg
 import logging
 import asyncio
+import ssl
 from datetime import datetime
 from typing import List, Tuple, Optional, Dict, Any
 import os
@@ -38,26 +39,48 @@ class PostgreSQLManager:
         self.database = database or os.getenv('POSTGRES_DB', 'gospel_bot')
         self.user = user or os.getenv('POSTGRES_USER', 'postgres')
         self.password = password or os.getenv('POSTGRES_PASSWORD', '')
+        self.ssl = os.getenv('POSTGRES_SSL', None)
+        self.ssl_cert = os.getenv('POSTGRES_SSL_CERT', None)
+        self.min_connections = int(os.getenv('POSTGRES_MIN_CONNECTIONS', '1'))
+        self.max_connections = int(os.getenv('POSTGRES_MAX_CONNECTIONS', '10'))
 
         # Пул соединений
         self.pool = None
 
         logger.info(
-            f"Инициализация PostgreSQL: {self.host}:{self.port}/{self.database}")
+            f"Инициализация PostgreSQL: {self.host}:{self.port}/{self.database} (SSL: {self.ssl})")
 
     async def initialize(self):
         """Инициализирует пул соединений и создает таблицы"""
         try:
+            # Подготавливаем параметры подключения
+            connection_params = {
+                'host': self.host,
+                'port': self.port,
+                'database': self.database,
+                'user': self.user,
+                'password': self.password,
+                'min_size': self.min_connections,
+                'max_size': self.max_connections
+            }
+
+            # Добавляем SSL если указан
+            if self.ssl:
+                if self.ssl_cert and os.path.exists(self.ssl_cert):
+                    # Создаем SSL контекст с сертификатом
+                    ssl_context = ssl.create_default_context(
+                        cafile=self.ssl_cert)
+                    ssl_context.check_hostname = False  # Для Supabase
+                    connection_params['ssl'] = ssl_context
+                    logger.info(
+                        f"SSL соединение с сертификатом: {self.ssl_cert}")
+                else:
+                    # Используем стандартный SSL
+                    connection_params['ssl'] = self.ssl
+                    logger.info(f"SSL соединение: {self.ssl}")
+
             # Создаем пул соединений
-            self.pool = await asyncpg.create_pool(
-                host=self.host,
-                port=self.port,
-                database=self.database,
-                user=self.user,
-                password=self.password,
-                min_size=2,
-                max_size=10
-            )
+            self.pool = await asyncpg.create_pool(**connection_params)
             logger.info("Пул соединений PostgreSQL создан")
 
             # Создаем таблицы
@@ -413,6 +436,19 @@ class PostgreSQLManager:
             return result is True
         except Exception as e:
             logger.error(f"Ошибка проверки завершения дня: {e}")
+            return False
+
+    async def is_reading_part_completed(self, user_id: int, plan_id: str, day: int, part_idx: int) -> bool:
+        """Проверяет, отмечена ли часть дня как прочитанная"""
+        try:
+            query = """
+                SELECT completed FROM reading_parts_progress 
+                WHERE user_id = $1 AND plan_id = $2 AND day_number = $3 AND part_index = $4
+            """
+            result = await self.pool.fetchval(query, user_id, plan_id, day, part_idx)
+            return result is True
+        except Exception as e:
+            logger.error(f"Ошибка проверки завершения части дня: {e}")
             return False
 
     async def get_reading_part_progress(self, user_id: int, plan_id: str, day: int) -> List[int]:

@@ -14,7 +14,7 @@ from keyboards.main import (
     create_reading_navigation_keyboard,
     get_main_keyboard
 )
-from services.reading_plans import reading_plans_service
+from services.universal_reading_plans import universal_reading_plans_service
 from database.universal_manager import universal_db_manager as db_manager
 from utils.api_client import bible_api
 from utils.bible_data import bible_data
@@ -63,7 +63,7 @@ async def select_reading_plan(callback: CallbackQuery, state: FSMContext):
         user_id = callback.from_user.id
 
         # Получаем информацию о плане
-        plan = reading_plans_service.get_plan(plan_id)
+        plan = universal_reading_plans_service.get_plan(plan_id)
         if not plan:
             await callback.answer("План не найден.")
             return
@@ -133,7 +133,7 @@ async def view_plan(callback: CallbackQuery, state: FSMContext):
         user_id = callback.from_user.id
 
         # Получаем информацию о плане
-        plan = reading_plans_service.get_plan(plan_id)
+        plan = universal_reading_plans_service.get_plan(plan_id)
         user_plan = await db_manager.get_user_reading_plan(user_id, plan_id)
 
         if not plan or not user_plan:
@@ -181,12 +181,12 @@ async def show_plan_day(callback: CallbackQuery, state: FSMContext):
         user_id = callback.from_user.id
 
         # Получаем информацию о плане и дне
-        plan = reading_plans_service.get_plan(plan_id)
+        plan = universal_reading_plans_service.get_plan(plan_id)
         if not plan:
             await callback.answer("План не найден.")
             return
 
-        reading = reading_plans_service.get_plan_day(plan_id, day)
+        reading = universal_reading_plans_service.get_plan_day(plan_id, day)
         if not reading:
             await callback.answer("День не найден.")
             return
@@ -195,12 +195,14 @@ async def show_plan_day(callback: CallbackQuery, state: FSMContext):
         is_completed = await db_manager.is_reading_day_completed_async(user_id, plan_id, day)
 
         # Проверяем навигацию
-        has_previous = reading_plans_service.get_previous_day(
+        has_previous = universal_reading_plans_service.get_previous_day(
             plan_id, day) is not None
-        has_next = reading_plans_service.get_next_day(plan_id, day) is not None
+        has_next = universal_reading_plans_service.get_next_day(
+            plan_id, day) is not None
 
         # Парсим ссылки для чтения
-        references = reading_plans_service.parse_reading_references(reading)
+        references = universal_reading_plans_service.parse_reading_references(
+            reading)
 
         # Формируем текст
         status_icon = "✅" if is_completed else "📖"
@@ -297,7 +299,7 @@ async def clear_plan_progress(callback: CallbackQuery, state: FSMContext):
         user_id = callback.from_user.id
 
         # Получаем название плана для подтверждения
-        plan = reading_plans_service.get_plan(plan_id)
+        plan = universal_reading_plans_service.get_plan(plan_id)
         if not plan:
             await callback.answer("План не найден.")
             return
@@ -341,7 +343,7 @@ async def show_plan_progress(callback: CallbackQuery, state: FSMContext):
         user_id = callback.from_user.id
 
         # Получаем информацию о плане
-        plan = reading_plans_service.get_plan(plan_id)
+        plan = universal_reading_plans_service.get_plan(plan_id)
         if not plan:
             await callback.answer("План не найден.")
             return
@@ -395,7 +397,7 @@ async def select_plan_day(callback: CallbackQuery, state: FSMContext):
         user_id = callback.from_user.id
 
         # Получаем информацию о плане
-        plan = reading_plans_service.get_plan(plan_id)
+        plan = universal_reading_plans_service.get_plan(plan_id)
         if not plan:
             await callback.answer("План не найден.")
             return
@@ -451,7 +453,7 @@ async def handle_day_selection(message: Message, state: FSMContext):
         user_id = message.from_user.id
 
         # Получаем информацию о плане
-        plan = reading_plans_service.get_plan(plan_id)
+        plan = universal_reading_plans_service.get_plan(plan_id)
         if not plan:
             await message.answer("План не найден.")
             return
@@ -470,7 +472,7 @@ async def handle_day_selection(message: Message, state: FSMContext):
         await db_manager.update_reading_plan_day(user_id, plan_id, day)
 
         # Показываем выбранный день
-        reading = reading_plans_service.get_plan_day(plan_id, day)
+        reading = universal_reading_plans_service.get_plan_day(plan_id, day)
         if not reading:
             await message.answer("День не найден.")
             return
@@ -479,12 +481,14 @@ async def handle_day_selection(message: Message, state: FSMContext):
         is_completed = await db_manager.is_reading_day_completed_async(user_id, plan_id, day)
 
         # Проверяем навигацию
-        has_previous = reading_plans_service.get_previous_day(
+        has_previous = universal_reading_plans_service.get_previous_day(
             plan_id, day) is not None
-        has_next = reading_plans_service.get_next_day(plan_id, day) is not None
+        has_next = universal_reading_plans_service.get_next_day(
+            plan_id, day) is not None
 
         # Парсим ссылки для чтения
-        references = reading_plans_service.parse_reading_references(reading)
+        references = universal_reading_plans_service.parse_reading_references(
+            reading)
 
         # Формируем текст
         status_icon = "✅" if is_completed else "📖"
@@ -529,13 +533,14 @@ async def show_reading_reference(callback: CallbackQuery, state: FSMContext):
         plan_id = "_".join(parts[2:-2])
 
         # Получаем чтение дня
-        reading = reading_plans_service.get_plan_day(plan_id, day)
+        reading = universal_reading_plans_service.get_plan_day(plan_id, day)
         if not reading:
             await callback.answer("Чтение не найдено.")
             return
 
         # Парсим ссылки
-        references = reading_plans_service.parse_reading_references(reading)
+        references = universal_reading_plans_service.parse_reading_references(
+            reading)
         if ref_index >= len(references):
             await callback.answer("Ссылка не найдена.")
             return
@@ -605,13 +610,14 @@ async def show_lopukhin_commentary_reading(callback: CallbackQuery, state: FSMCo
         plan_id = "_".join(parts[2:-2])
 
         # Получаем чтение дня
-        reading = reading_plans_service.get_plan_day(plan_id, day)
+        reading = universal_reading_plans_service.get_plan_day(plan_id, day)
         if not reading:
             await callback.answer("Чтение не найдено.")
             return
 
         # Парсим ссылки
-        references = reading_plans_service.parse_reading_references(reading)
+        references = universal_reading_plans_service.parse_reading_references(
+            reading)
         if ref_index >= len(references):
             await callback.answer("Ссылка не найдена.")
             return
@@ -687,13 +693,14 @@ async def show_ai_analysis_reading(callback: CallbackQuery, state: FSMContext):
         plan_id = "_".join(parts[2:-2])
 
         # Получаем чтение дня
-        reading = reading_plans_service.get_plan_day(plan_id, day)
+        reading = universal_reading_plans_service.get_plan_day(plan_id, day)
         if not reading:
             await callback.answer("Чтение не найдено.")
             return
 
         # Парсим ссылки
-        references = reading_plans_service.parse_reading_references(reading)
+        references = universal_reading_plans_service.parse_reading_references(
+            reading)
         if ref_index >= len(references):
             await callback.answer("Ссылка не найдена.")
             return
@@ -767,13 +774,14 @@ async def add_bookmark_reading(callback: CallbackQuery, state: FSMContext):
         plan_id = "_".join(parts[3:-2])
 
         # Получаем чтение дня
-        reading = reading_plans_service.get_plan_day(plan_id, day)
+        reading = universal_reading_plans_service.get_plan_day(plan_id, day)
         if not reading:
             await callback.answer("Чтение не найдено.")
             return
 
         # Парсим ссылки
-        references = reading_plans_service.parse_reading_references(reading)
+        references = universal_reading_plans_service.parse_reading_references(
+            reading)
         if ref_index >= len(references):
             await callback.answer("Ссылка не найдена.")
             return
@@ -843,13 +851,14 @@ async def remove_bookmark_reading(callback: CallbackQuery, state: FSMContext):
         plan_id = "_".join(parts[3:-2])
 
         # Получаем чтение дня
-        reading = reading_plans_service.get_plan_day(plan_id, day)
+        reading = universal_reading_plans_service.get_plan_day(plan_id, day)
         if not reading:
             await callback.answer("Чтение не найдено.")
             return
 
         # Парсим ссылки
-        references = reading_plans_service.parse_reading_references(reading)
+        references = universal_reading_plans_service.parse_reading_references(
+            reading)
         if ref_index >= len(references):
             await callback.answer("Ссылка не найдена.")
             return

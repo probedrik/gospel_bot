@@ -205,7 +205,16 @@ async def is_chapter_bookmarked(user_id: int, book_id: int, chapter: int, db) ->
         bookmarks = await db.get_bookmarks(user_id)
 
         # Проверяем, есть ли среди них нужная
-        for bm_book_id, bm_chapter, _ in bookmarks:
+        # Поддержка разных форматов данных (кортежи для SQLite, словари для Supabase/PostgreSQL)
+        for bookmark in bookmarks:
+            if isinstance(bookmark, dict):
+                # Формат словаря (Supabase/PostgreSQL)
+                bm_book_id = bookmark['book_id']
+                bm_chapter = bookmark['chapter']
+            else:
+                # Формат кортежа (SQLite)
+                bm_book_id, bm_chapter, _ = bookmark
+
             if bm_book_id == book_id and bm_chapter == chapter:
                 logger.info(
                     f"Глава {book_id}:{chapter} найдена в закладках пользователя {user_id}")
@@ -964,7 +973,7 @@ async def topic_selected(message: Message):
 
 @router.callback_query(F.data.regexp(r'^open_chapter_([а-яА-Я0-9]+)_(\d+)$'))
 async def open_full_chapter_callback(callback: CallbackQuery, state: FSMContext):
-    # Удаляем предыдущую главу и все связанные сообщения (толкования, ИИ-разборы)
+    # Удаляем предыдущую главу и все связанные сообщения (толкование, ИИ-разборы)
     data = await state.get_data() if state else {}
     prev_chapter_msg_id = data.get('last_chapter_msg_id')
     prev_commentary_msg_id = data.get('last_topic_commentary_msg_id')
@@ -1151,9 +1160,8 @@ def format_ai_or_commentary(text, title=None):
 
 @router.message(F.text == "📚 План чтения")
 async def reading_plan_menu(message: Message, state: FSMContext):
-    from services.reading_plans import ReadingPlansService
-    plans_service = ReadingPlansService()
-    plans = plans_service.get_all_plans()
+    from services.universal_reading_plans import universal_reading_plans_service
+    plans = universal_reading_plans_service.get_all_plans()
     if not plans:
         await message.answer("Планы чтения не найдены.")
         return
@@ -1174,7 +1182,7 @@ async def reading_plan_menu(message: Message, state: FSMContext):
 
 @router.callback_query(F.data.regexp(r'^readingplan_(.+?)(?:_page_(\d+))?$'))
 async def reading_plan_days(callback: CallbackQuery, state: FSMContext):
-    from services.reading_plans import ReadingPlansService
+    from services.universal_reading_plans import universal_reading_plans_service
 
     # Более надежный способ парсинга callback_data
     callback_parts = callback.data.split('_')
@@ -1191,9 +1199,8 @@ async def reading_plan_days(callback: CallbackQuery, state: FSMContext):
         await callback.answer("Ошибка обработки данных")
         return
 
-    # Создаем сервис планов чтения
-    plans_service = ReadingPlansService()
-    plan = plans_service.get_plan(plan_id)
+    # Получаем план из универсального сервиса
+    plan = universal_reading_plans_service.get_plan(plan_id)
     if not plan:
         await callback.answer("План не найден")
         return
@@ -1245,15 +1252,19 @@ async def reading_plan_days(callback: CallbackQuery, state: FSMContext):
         parts = [p.strip() for p in reading_text.split(';') if p.strip()]
         total_parts = len(parts)
         completed_parts = set(
-            db_manager.get_reading_parts_progress(user_id, plan_id, day_num))
+            await db_manager.get_reading_part_progress(user_id, plan_id, day_num))
         completed_parts_count = len(completed_parts)
 
+        # Улучшенная система значков с прогрессом
         if completed_parts_count == total_parts and total_parts > 0:
             mark = "✅"  # Все части прочитаны
+            progress_text = ""
         elif completed_parts_count > 0:
             mark = "📖"  # Частично прочитано
+            progress_text = f" ({completed_parts_count}/{total_parts})"
         else:
-            mark = ""    # Ничего не прочитано
+            mark = "⭕"  # Ничего не прочитано
+            progress_text = f" (0/{total_parts})" if total_parts > 1 else ""
 
         short = reading_text
         short = re.sub(r'Евангелие от ', '', short)
@@ -1266,7 +1277,12 @@ async def reading_plan_days(callback: CallbackQuery, state: FSMContext):
         short = re.sub(r'Марка', 'Мк', short)
         short = re.sub(r'Луки', 'Лк', short)
         short = re.sub(r'Иоанна', 'Ин', short)
-        btn_text = f"{mark} День {day_num} - {short}" if mark else f"День {day_num} - {short}"
+
+        # Укорачиваем текст если он слишком длинный
+        if len(short) > 45:
+            short = short[:42] + "..."
+
+        btn_text = f"{mark} День {day_num}{progress_text} - {short}"
         buttons.append([
             InlineKeyboardButton(
                 text=btn_text,
@@ -1297,12 +1313,11 @@ async def reading_plan_days(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data.regexp(r'^readingday_(.+)_(\d+)$'))
 async def reading_plan_day(callback: CallbackQuery, state: FSMContext):
-    from services.reading_plans import ReadingPlansService
+    from services.universal_reading_plans import universal_reading_plans_service
     m = re.match(r'^readingday_(.+)_(\d+)$', callback.data)
     plan_id, day = m.group(1), int(m.group(2))
 
-    plans_service = ReadingPlansService()
-    plan = plans_service.get_plan(plan_id)
+    plan = universal_reading_plans_service.get_plan(plan_id)
     if not plan:
         await callback.answer("План не найден")
         return
@@ -1327,13 +1342,43 @@ async def reading_plan_day(callback: CallbackQuery, state: FSMContext):
 
     # Проверяем прогресс отдельных частей
     completed_parts = set(
-        db_manager.get_reading_parts_progress(user_id, plan_id, day))
+        await db_manager.get_reading_part_progress(user_id, plan_id, day))
+
+    # Подсчитываем общий прогресс дня
+    total_parts = len(parts)
+    completed_count = len(completed_parts)
+
+    # Добавляем логирование для отладки
+    logger = logging.getLogger(__name__)
+    logger.info(
+        f"[PROGRESS] Отображение дня: user_id={user_id}, plan_id={plan_id}, day={day}")
+    logger.info(
+        f"[PROGRESS] Всего частей: {total_parts}, завершено: {completed_count}")
+    logger.info(
+        f"[PROGRESS] Список завершенных частей: {list(completed_parts)}")
+
+    # Определяем статус дня
+    if completed_count == total_parts and total_parts > 0:
+        day_status = "✅ Все части прочитаны"
+        day_icon = "✅"
+    elif completed_count > 0:
+        day_status = f"📖 Прочитано: {completed_count} из {total_parts}"
+        day_icon = "📖"
+    else:
+        day_status = f"⭕ Не прочитано: 0 из {total_parts}"
+        day_icon = "⭕"
 
     # Формируем кнопки для каждой части
     entry_buttons = []
     for i, part in enumerate(parts):
-        # Добавляем галочку для прочитанных частей
-        part_text = f"✅ {part}" if i in completed_parts else part
+        # Улучшенные значки для частей
+        if i in completed_parts:
+            part_icon = "✅"
+            part_text = f"{part_icon} {part}"
+        else:
+            part_icon = "📄"
+            part_text = f"{part_icon} {part}"
+
         entry_buttons.append([
             InlineKeyboardButton(
                 text=part_text,
@@ -1352,8 +1397,17 @@ async def reading_plan_day(callback: CallbackQuery, state: FSMContext):
     kb = InlineKeyboardMarkup(
         inline_keyboard=entry_buttons + control_buttons
     )
+
+    # Формируем улучшенный текст с прогрессом
+    message_text = (
+        f"<b>📋 План:</b> {plan.title}\n"
+        f"<b>{day_icon} День {day}:</b> {day_status}\n\n"
+        f"<b>📖 Чтение на день:</b>\n"
+        f"<i>{reading_text}</i>"
+    )
+
     await callback.message.edit_text(
-        f"<b>План:</b> {plan.title}\n<b>День {day}:</b>\n{reading_text}",
+        message_text,
         reply_markup=kb, parse_mode="HTML")
     await callback.answer()
 
@@ -1364,7 +1418,7 @@ async def reading_plan_text(callback: CallbackQuery, state: FSMContext):
     # Импортируем все необходимые функции в начале, чтобы избежать UnboundLocalError
     from utils.text_utils import split_text
     from handlers.verse_reference import get_verse_by_reference
-    from services.reading_plans import ReadingPlansService
+    from services.universal_reading_plans import universal_reading_plans_service
 
     parts = callback.data.split('_')
     if len(parts) == 4:  # readingtext_{plan_id}_{day}_{part_idx}
@@ -1376,8 +1430,7 @@ async def reading_plan_text(callback: CallbackQuery, state: FSMContext):
         logging.warning(
             f"[reading_plan_text] callback_data={callback.data} plan_id={plan_id} day={day} part_idx={part_idx}")
 
-        plans_service = ReadingPlansService()
-        plan = plans_service.get_plan(plan_id)
+        plan = universal_reading_plans_service.get_plan(plan_id)
         if not plan:
             await callback.answer("План не найден")
             return
@@ -1411,7 +1464,7 @@ async def reading_plan_text(callback: CallbackQuery, state: FSMContext):
 
         # Проверяем, прочитана ли эта часть
         from database.universal_manager import universal_db_manager as db_manager
-        part_completed = db_manager.is_reading_part_completed(
+        part_completed = await db_manager.is_reading_part_completed(
             user_id, plan_id, day, part_idx)
 
         # Формируем кнопки под текстом главы
@@ -1449,9 +1502,8 @@ async def reading_plan_text(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "back_to_reading_plans")
 async def back_to_reading_plans(callback: CallbackQuery, state: FSMContext):
     """Возврат к списку планов чтения"""
-    from services.reading_plans import ReadingPlansService
-    plans_service = ReadingPlansService()
-    plans = plans_service.get_all_plans()
+    from services.universal_reading_plans import universal_reading_plans_service
+    plans = universal_reading_plans_service.get_all_plans()
     if not plans:
         await callback.message.edit_text("Планы чтения не найдены.")
         return
@@ -1494,9 +1546,8 @@ async def mark_reading_done(callback: CallbackQuery):
     await callback.answer("✅ День отмечен как прочитанный!")
 
     # Перезагружаем страницу с днем для обновления кнопки
-    from services.reading_plans import ReadingPlansService
-    plans_service = ReadingPlansService()
-    plan = plans_service.get_plan(plan_id)
+    from services.universal_reading_plans import universal_reading_plans_service
+    plan = universal_reading_plans_service.get_plan(plan_id)
     if not plan:
         return
 
@@ -1548,7 +1599,10 @@ async def mark_reading_done(callback: CallbackQuery):
 async def mark_reading_part_done(callback: CallbackQuery):
     """Отметить часть дня как прочитанную"""
     import re
+    import logging
     from database.universal_manager import universal_db_manager as db_manager
+
+    logger = logging.getLogger(__name__)
 
     m = re.match(r'^readingpartdone_(.+)_(\d+)_(\d+)$', callback.data)
     if not m:
@@ -1560,13 +1614,25 @@ async def mark_reading_part_done(callback: CallbackQuery):
     part_idx = int(m.group(3))
     user_id = callback.from_user.id
 
+    logger.info(
+        f"[PROGRESS] Отмечаем часть как прочитанную: user_id={user_id}, plan_id={plan_id}, day={day}, part_idx={part_idx}")
+
     # Отмечаем часть как прочитанную в базе данных
-    await db_manager.mark_reading_part_completed(user_id, plan_id, day, part_idx)
+    result = await db_manager.mark_reading_part_completed(user_id, plan_id, day, part_idx)
+    logger.info(f"[PROGRESS] Результат сохранения: {result}")
 
-    await callback.answer("✅ Часть отмечена как прочитанная!")
+    # Проверяем, действительно ли часть отмечена
+    part_completed = await db_manager.is_reading_part_completed(user_id, plan_id, day, part_idx)
+    logger.info(f"[PROGRESS] Статус после сохранения: {part_completed}")
 
-    # Обновляем кнопки
-    part_completed = True  # Теперь прочитано
+    if part_completed:
+        await callback.answer("✅ Часть отмечена как прочитанная!")
+    else:
+        await callback.answer("❌ Ошибка при сохранении прогресса!")
+        logger.error(
+            f"[PROGRESS] Не удалось сохранить прогресс для user_id={user_id}, plan_id={plan_id}, day={day}, part_idx={part_idx}")
+
+    # Обновляем кнопки с реальным статусом
     action_buttons = [
         [InlineKeyboardButton(
             text="✅ Прочитано" if not part_completed else "Уже отмечено",
@@ -1590,7 +1656,7 @@ async def mark_reading_part_done(callback: CallbackQuery):
 async def reading_ai_callback(callback: CallbackQuery, state: FSMContext):
     """Показать ИИ-разбор для части плана чтения"""
     import re
-    from services.reading_plans import ReadingPlansService
+    from services.universal_reading_plans import universal_reading_plans_service
 
     # --- AI LIMIT CHECK ---
     user_id = callback.from_user.id
@@ -1609,8 +1675,7 @@ async def reading_ai_callback(callback: CallbackQuery, state: FSMContext):
     part_idx = int(m.group(3))
 
     # Получаем информацию о части чтения
-    plans_service = ReadingPlansService()
-    plan = plans_service.get_plan(plan_id)
+    plan = universal_reading_plans_service.get_plan(plan_id)
     if not plan:
         await callback.answer("План не найден")
         return
@@ -1651,7 +1716,7 @@ async def reading_ai_callback(callback: CallbackQuery, state: FSMContext):
                 # Проверяем, прочитана ли эта часть
                 from database.universal_manager import universal_db_manager as db_manager
                 user_id = callback.from_user.id
-                part_completed = db_manager.is_reading_part_completed(
+                part_completed = await db_manager.is_reading_part_completed(
                     user_id, plan_id, day, part_idx)
 
                 # Кнопки под ИИ-разбором

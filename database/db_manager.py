@@ -896,19 +896,36 @@ class DatabaseManager:
         conn.close()
         return days
 
-    def mark_reading_part_completed(self, user_id: int, plan_id: str, day: int, part_idx: int):
+    def _mark_reading_part_completed_sync(self, user_id: int, plan_id: str, day: int, part_idx: int):
         """Отметить часть дня плана как прочитанную пользователем."""
+        logger.info(
+            f"[DB_SQLITE] Сохраняем прогресс: user_id={user_id}, plan_id={plan_id}, day={day}, part_idx={part_idx}")
         conn = sqlite3.connect(self.db_file)
         cursor = conn.cursor()
         cursor.execute('''
             INSERT OR REPLACE INTO reading_parts_progress (user_id, plan_id, day, part_idx, completed, completed_at)
             VALUES (?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
         ''', (user_id, plan_id, day, part_idx))
+        affected_rows = cursor.rowcount
         conn.commit()
         conn.close()
+        logger.info(f"[DB_SQLITE] Затронуто строк: {affected_rows}")
 
-    def is_reading_part_completed(self, user_id: int, plan_id: str, day: int, part_idx: int) -> bool:
-        """Проверить, отмечена ли часть дня как прочитанная."""
+    async def mark_reading_part_completed(self, user_id: int, plan_id: str, day: int, part_idx: int) -> bool:
+        """Асинхронный метод для отметки части дня как прочитанной (для совместимости с универсальным менеджером)"""
+        try:
+            import asyncio
+            await asyncio.to_thread(self._mark_reading_part_completed_sync, user_id, plan_id, day, part_idx)
+            logger.info(
+                f"[DB_SQLITE] Успешно сохранен прогресс: user_id={user_id}, plan_id={plan_id}, day={day}, part_idx={part_idx}")
+            return True
+        except Exception as e:
+            logger.error(
+                f"[DB_SQLITE] Ошибка при отметке части дня как прочитанной: {e}")
+            return False
+
+    def _is_reading_part_completed_sync_old(self, user_id: int, plan_id: str, day: int, part_idx: int) -> bool:
+        """Старая синхронная версия - оставлена для совместимости"""
         conn = sqlite3.connect(self.db_file)
         cursor = conn.cursor()
         cursor.execute('''
@@ -920,6 +937,8 @@ class DatabaseManager:
 
     def get_reading_parts_progress(self, user_id: int, plan_id: str, day: int) -> list:
         """Получить список всех отмеченных частей для пользователя, плана и дня."""
+        logger.info(
+            f"[DB_SQLITE] Читаем прогресс: user_id={user_id}, plan_id={plan_id}, day={day}")
         conn = sqlite3.connect(self.db_file)
         cursor = conn.cursor()
         cursor.execute('''
@@ -927,7 +946,37 @@ class DatabaseManager:
         ''', (user_id, plan_id, day))
         parts = [row[0] for row in cursor.fetchall()]
         conn.close()
+        logger.info(f"[DB_SQLITE] Найдено завершенных частей: {parts}")
         return parts
+
+    async def get_reading_part_progress(self, user_id: int, plan_id: str, day: int) -> list:
+        """Асинхронная версия получения списка отмеченных частей для пользователя, плана и дня."""
+        import asyncio
+        result = await asyncio.to_thread(self.get_reading_parts_progress, user_id, plan_id, day)
+        logger.info(f"[DB_SQLITE] Асинхронно получен прогресс: {result}")
+        return result
+
+    def _is_reading_part_completed_sync(self, user_id: int, plan_id: str, day: int, part_idx: int) -> bool:
+        """Синхронная версия проверки завершения части дня"""
+        logger.info(
+            f"[DB_SQLITE] Проверяем статус части: user_id={user_id}, plan_id={plan_id}, day={day}, part_idx={part_idx}")
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT completed FROM reading_parts_progress WHERE user_id=? AND plan_id=? AND day=? AND part_idx=?
+        ''', (user_id, plan_id, day, part_idx))
+        row = cursor.fetchone()
+        conn.close()
+        result = bool(row and row[0])
+        logger.info(f"[DB_SQLITE] Статус части: {result}")
+        return result
+
+    async def is_reading_part_completed(self, user_id: int, plan_id: str, day: int, part_idx: int) -> bool:
+        """Асинхронный метод для проверки завершения части дня (для совместимости с универсальным менеджером)"""
+        import asyncio
+        result = await asyncio.to_thread(self._is_reading_part_completed_sync, user_id, plan_id, day, part_idx)
+        logger.info(f"[DB_SQLITE] Асинхронно проверен статус части: {result}")
+        return result
 
 # Глобальный экземпляр менеджера БД
 

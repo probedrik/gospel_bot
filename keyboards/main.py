@@ -209,9 +209,9 @@ def create_bookmarks_keyboard(bookmarks) -> InlineKeyboardMarkup:
 
     # Добавляем кнопки для закладок
     try:
-        # Если это список кортежей из БД
-        if bookmarks and isinstance(bookmarks, list) and isinstance(bookmarks[0], tuple):
-            logger.info("Обработка закладок из БД")
+        # Если это список кортежей из БД (SQLite)
+        if bookmarks and isinstance(bookmarks, list) and len(bookmarks) > 0 and isinstance(bookmarks[0], tuple):
+            logger.info("Обработка закладок из БД (SQLite - кортежи)")
             for bookmark in bookmarks:
                 if len(bookmark) >= 3:  # Проверяем, что в кортеже достаточно элементов
                     book_id, chapter, display_text = bookmark[0], bookmark[1], bookmark[2]
@@ -222,6 +222,31 @@ def create_bookmarks_keyboard(bookmarks) -> InlineKeyboardMarkup:
                         display_text = f"{book_name} {chapter}"
                         logger.warning(
                             f"Преобразован некорректный формат display_text: {bookmark[2]} -> {display_text}")
+
+                    buttons.append([
+                        InlineKeyboardButton(
+                            text=display_text,
+                            callback_data=f"bookmark_{book_id}_{chapter}"
+                        )
+                    ])
+        # Если это список словарей из БД (Supabase/PostgreSQL)
+        elif bookmarks and isinstance(bookmarks, list) and len(bookmarks) > 0 and isinstance(bookmarks[0], dict):
+            logger.info(
+                "Обработка закладок из БД (Supabase/PostgreSQL - словари)")
+            for bookmark in bookmarks:
+                book_id = bookmark.get('book_id')
+                chapter = bookmark.get('chapter')
+                display_text = bookmark.get('display_text')
+
+                # Проверяем, что есть необходимые поля
+                if book_id is not None and chapter is not None:
+                    # Проверяем, что текст является строкой
+                    if not isinstance(display_text, str) or not display_text:
+                        from utils.bible_data import bible_data
+                        book_name = bible_data.get_book_name(book_id)
+                        display_text = f"{book_name} {chapter}"
+                        logger.warning(
+                            f"Создан display_text для закладки: {display_text}")
 
                     buttons.append([
                         InlineKeyboardButton(

@@ -8,6 +8,7 @@ from typing import Optional, Union
 
 from .db_manager import DatabaseManager
 from .postgres_manager import PostgreSQLManager
+from .supabase_manager import SupabaseManager
 
 logger = logging.getLogger(__name__)
 
@@ -17,34 +18,47 @@ class UniversalDatabaseManager:
 
     def __init__(self):
         self.manager: Optional[Union[DatabaseManager,
-                                     PostgreSQLManager]] = None
+                                     PostgreSQLManager,
+                                     SupabaseManager]] = None
         self.is_postgres = False
+        self.is_supabase = False
         self._initialize()
 
     def _initialize(self):
         """Инициализирует подходящий менеджер базы данных"""
+        # Проверяем переменную окружения USE_SUPABASE
+        use_supabase = os.getenv('USE_SUPABASE', 'false').lower() in [
+            'true', '1', 'yes']
+
         # Проверяем переменную окружения USE_POSTGRES
         use_postgres = os.getenv('USE_POSTGRES', 'false').lower() in [
             'true', '1', 'yes']
 
-        if use_postgres:
+        if use_supabase:
+            logger.info("☁️ Инициализация Supabase менеджера")
+            self.manager = SupabaseManager()
+            self.is_supabase = True
+            self.is_postgres = False  # Supabase использует PostgreSQL, но через API
+        elif use_postgres:
             logger.info("🐘 Инициализация PostgreSQL менеджера")
             self.manager = PostgreSQLManager()
             self.is_postgres = True
+            self.is_supabase = False
         else:
             logger.info("🗃️ Инициализация SQLite менеджера")
             self.manager = DatabaseManager()
             self.is_postgres = False
+            self.is_supabase = False
 
     async def initialize(self):
         """Асинхронная инициализация менеджера"""
-        if self.is_postgres:
+        if self.is_postgres or self.is_supabase:
             await self.manager.initialize()
         # SQLite инициализируется автоматически в конструкторе
 
     async def close(self):
         """Закрывает соединения с базой данных"""
-        if self.is_postgres and hasattr(self.manager, 'close'):
+        if (self.is_postgres or self.is_supabase) and hasattr(self.manager, 'close'):
             await self.manager.close()
 
     # Методы для работы с пользователями
@@ -71,7 +85,7 @@ class UniversalDatabaseManager:
 
     async def add_bookmark(self, user_id: int, book_id: int, chapter: int, display_text: str):
         """Добавляет закладку"""
-        if self.is_postgres:
+        if self.is_postgres or self.is_supabase:
             return await self.manager.add_bookmark(
                 user_id=user_id,
                 book_id=book_id,
@@ -122,6 +136,10 @@ class UniversalDatabaseManager:
         """Проверяет, завершен ли день плана чтения"""
         return await self.manager.is_reading_day_completed(user_id, plan_id, day)
 
+    async def is_reading_part_completed(self, user_id: int, plan_id: str, day: int, part_idx: int):
+        """Проверяет, отмечена ли часть дня как прочитанная"""
+        return await self.manager.is_reading_part_completed(user_id, plan_id, day, part_idx)
+
     # Методы для совместимости с handlers
     async def get_user_reading_plan(self, user_id: int, plan_id: str):
         """Получает план чтения пользователя"""
@@ -158,31 +176,38 @@ class UniversalDatabaseManager:
 
     # Методы для работы с планами чтения (только для PostgreSQL)
     async def get_reading_plans(self):
-        """Получает все планы чтения (только PostgreSQL)"""
-        if self.is_postgres:
+        """Получает все планы чтения (только PostgreSQL/Supabase)"""
+        if self.is_postgres or self.is_supabase:
             return await self.manager.get_reading_plans()
         else:
             # Для SQLite возвращаем пустой список, планы будут из CSV
             return []
 
     async def get_reading_plan_days(self, plan_id: str):
-        """Получает дни плана чтения (только PostgreSQL)"""
-        if self.is_postgres:
+        """Получает дни плана чтения (только PostgreSQL/Supabase)"""
+        if self.is_postgres or self.is_supabase:
             return await self.manager.get_reading_plan_days(plan_id)
         else:
             # Для SQLite возвращаем пустой список, планы будут из CSV
             return []
 
+    async def get_reading_plan_by_id(self, plan_id: str):
+        """Получает план чтения по ID (только PostgreSQL/Supabase)"""
+        if self.is_postgres or self.is_supabase:
+            return await self.manager.get_reading_plan_by_id(plan_id)
+        else:
+            return None
+
     # Совместимость со старым API SQLite
     def _create_tables(self):
         """Создает таблицы (только для SQLite)"""
-        if not self.is_postgres:
+        if not self.is_postgres and not self.is_supabase:
             return self.manager._create_tables()
 
     @property
     def db_file(self):
         """Путь к файлу базы данных (только для SQLite)"""
-        if not self.is_postgres:
+        if not self.is_postgres and not self.is_supabase:
             return self.manager.db_file
         return None
 

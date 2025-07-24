@@ -269,8 +269,18 @@ async def direct_bookmark(message: Message, state: FSMContext):
 
         # Проверяем, добавилась ли закладка
         bookmarks = await db_manager.get_bookmarks(user_id)
-        bookmark_in_db = any(bm[0] == book_id and bm[1]
-                             == chapter for bm in bookmarks)
+
+        # Поддержка разных форматов данных
+        if bookmarks:
+            if isinstance(bookmarks[0], dict):
+                bookmark_in_db = any(
+                    bm['book_id'] == book_id and bm['chapter'] == chapter for bm in bookmarks)
+            else:
+                bookmark_in_db = any(
+                    bm[0] == book_id and bm[1] == chapter for bm in bookmarks)
+        else:
+            bookmark_in_db = False
+
         logger.info(
             f"Проверка наличия закладки в БД после добавления: {'найдена' if bookmark_in_db else 'не найдена'}")
 
@@ -448,8 +458,17 @@ async def save_bookmarks_to_db(message: Message, state: FSMContext):
 
                     # Проверяем, есть ли такая закладка уже в БД
                     bookmarks = await db_manager.get_bookmarks(user_id)
-                    bookmark_exists = any(
-                        bm[0] == book_id and bm[1] == chapter for bm in bookmarks)
+
+                    # Поддержка разных форматов данных
+                    if bookmarks:
+                        if isinstance(bookmarks[0], dict):
+                            bookmark_exists = any(
+                                bm['book_id'] == book_id and bm['chapter'] == chapter for bm in bookmarks)
+                        else:
+                            bookmark_exists = any(
+                                bm[0] == book_id and bm[1] == chapter for bm in bookmarks)
+                    else:
+                        bookmark_exists = False
 
                     if bookmark_exists:
                         logger.info(

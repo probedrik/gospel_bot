@@ -1,0 +1,20 @@
+services:
+  bible-bot:
+    image: gospel-bot:test  # Локальный образ
+    container_name: bible-bot-test
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    env_file:
+      - .env
+    environment:
+      - TZ=Europe/Moscow
+      # Принудительно устанавливаем использование Supabase
+      - USE_SUPABASE=true
+    networks:
+      - gospel-network
+
+networks:
+  gospel-network:
+    driver: bridge 

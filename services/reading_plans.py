@@ -38,11 +38,27 @@ class ReadingPlansService:
         """Загружает все планы из CSV файлов"""
         if not os.path.exists(self.plans_directory):
             logger.error(f"Папка с планами не найдена: {self.plans_directory}")
+            logger.info("💡 Попробуйте переключиться на планы из Supabase:")
+            logger.info("   python switch_to_supabase_plans.py")
+            logger.info("💡 Или восстановите CSV планы:")
+            logger.info(
+                "   mv data/plans_csv_final_disabled data/plans_csv_final")
+
+            # Пытаемся загрузить планы из резервной копии
+            backup_dir = "data/plans_csv_backup"
+            if os.path.exists(backup_dir):
+                logger.info(
+                    f"🔄 Пытаемся загрузить планы из резервной копии: {backup_dir}")
+                self._load_from_directory(backup_dir)
             return
 
-        for filename in os.listdir(self.plans_directory):
+        self._load_from_directory(self.plans_directory)
+
+    def _load_from_directory(self, directory: str) -> None:
+        """Загружает планы из указанной директории"""
+        for filename in os.listdir(directory):
             if filename.endswith('.csv'):
-                plan_path = os.path.join(self.plans_directory, filename)
+                plan_path = os.path.join(directory, filename)
                 try:
                     plan = self._load_plan_from_csv(plan_path, filename)
                     if plan:
@@ -233,4 +249,13 @@ class ReadingPlansService:
 
 
 # Создаем глобальный экземпляр службы
-reading_plans_service = ReadingPlansService()
+# ПРИМЕЧАНИЕ: Теперь используется универсальная служба с fallback логикой
+try:
+    from services.universal_reading_plans import universal_reading_plans_service
+    reading_plans_service = universal_reading_plans_service
+    logger.info(
+        "🔄 Используется универсальная служба планов чтения с fallback логикой")
+except ImportError:
+    # Fallback на обычную службу
+    reading_plans_service = ReadingPlansService()
+    logger.warning("⚠️ Используется обычная служба планов чтения")

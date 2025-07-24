@@ -1,0 +1,20 @@
+services:
+  bible-bot:
+    image: probedrik/gospel-bot:v2.8.14
+    container_name: bible-bot-supabase
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    env_file:
+      - .env
+    environment:
+      - TZ=Europe/Moscow
+      # Принудительно устанавливаем использование Supabase
+      - USE_SUPABASE=true
+    networks:
+      - gospel-network
+
+networks:
+  gospel-network:
+    driver: bridge 

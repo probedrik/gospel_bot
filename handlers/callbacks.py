@@ -359,7 +359,16 @@ async def is_chapter_bookmarked(user_id: int, book_id: int, chapter: int, db=Non
         bookmarks = await db_manager.get_bookmarks(user_id)
 
         # Проверяем, есть ли среди них нужная
-        for bm_book_id, bm_chapter, _ in bookmarks:
+        # Поддержка разных форматов данных (кортежи для SQLite, словари для Supabase/PostgreSQL)
+        for bookmark in bookmarks:
+            if isinstance(bookmark, dict):
+                # Формат словаря (Supabase/PostgreSQL)
+                bm_book_id = bookmark['book_id']
+                bm_chapter = bookmark['chapter']
+            else:
+                # Формат кортежа (SQLite)
+                bm_book_id, bm_chapter, _ = bookmark
+
             if bm_book_id == book_id and bm_chapter == chapter:
                 logger.info(
                     f"Глава {book_id}:{chapter} найдена в закладках пользователя {user_id}")

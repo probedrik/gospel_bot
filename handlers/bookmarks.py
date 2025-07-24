@@ -93,20 +93,27 @@ async def show_bookmarks(message: Message, state: FSMContext, db=None):
         # Сначала добавляем закладки из БД
         for bookmark in db_bookmarks:
             try:
-                if bookmark and len(bookmark) >= 3:
+                # Поддержка разных форматов данных
+                if isinstance(bookmark, dict):
+                    # Формат словаря (Supabase/PostgreSQL)
+                    book_id = bookmark.get('book_id')
+                    chapter = bookmark.get('chapter')
+                    display_text = bookmark.get('display_text')
+                elif isinstance(bookmark, (tuple, list)) and len(bookmark) >= 3:
+                    # Формат кортежа/списка (SQLite)
                     book_id, chapter, display_text = bookmark[0], bookmark[1], bookmark[2]
-
-                    # Проверяем типы данных
-                    if not (isinstance(book_id, int) and isinstance(chapter, int) and isinstance(display_text, str)):
-                        logger.warning(
-                            f"Некорректные типы данных в закладке из БД: {bookmark}")
-                        continue
-
-                    key = f"{book_id}_{chapter}"
-                    unique_bookmarks[key] = (book_id, chapter, display_text)
                 else:
+                    logger.warning(f"Неизвестный формат закладки: {bookmark}")
+                    continue
+
+                # Проверяем типы данных
+                if not (isinstance(book_id, int) and isinstance(chapter, int) and isinstance(display_text, str)):
                     logger.warning(
-                        f"Некорректный формат закладки из БД: {bookmark}")
+                        f"Некорректные типы данных в закладке из БД: {bookmark}")
+                    continue
+
+                key = f"{book_id}_{chapter}"
+                unique_bookmarks[key] = (book_id, chapter, display_text)
             except Exception as e:
                 logger.error(f"Ошибка при обработке закладки из БД: {e}")
 

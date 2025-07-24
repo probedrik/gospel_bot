@@ -76,8 +76,17 @@ async def add_bookmark(callback: CallbackQuery, state: FSMContext, db=None):
     # 2. Проверяем, есть ли уже такая закладка в БД
     try:
         bookmarks = await db_manager.get_bookmarks(user_id)
-        bookmark_exists = any(bm[0] == book_id and bm[1]
-                              == chapter for bm in bookmarks)
+
+        # Поддержка разных форматов данных
+        if bookmarks:
+            if isinstance(bookmarks[0], dict):
+                bookmark_exists = any(
+                    bm['book_id'] == book_id and bm['chapter'] == chapter for bm in bookmarks)
+            else:
+                bookmark_exists = any(
+                    bm[0] == book_id and bm[1] == chapter for bm in bookmarks)
+        else:
+            bookmark_exists = False
 
         if bookmark_exists:
             logger.info(f"Закладка {display_text} уже существует в БД")
@@ -91,8 +100,18 @@ async def add_bookmark(callback: CallbackQuery, state: FSMContext, db=None):
 
             # Проверяем, что закладка действительно добавлена
             bookmarks = await db_manager.get_bookmarks(user_id)
-            bookmark_in_db = any(
-                bm[0] == book_id and bm[1] == chapter for bm in bookmarks)
+
+            # Поддержка разных форматов данных
+            if bookmarks:
+                if isinstance(bookmarks[0], dict):
+                    bookmark_in_db = any(
+                        bm['book_id'] == book_id and bm['chapter'] == chapter for bm in bookmarks)
+                else:
+                    bookmark_in_db = any(
+                        bm[0] == book_id and bm[1] == chapter for bm in bookmarks)
+            else:
+                bookmark_in_db = False
+
             logger.info(
                 f"Проверка наличия закладки в БД после добавления: {'найдена' if bookmark_in_db else 'не найдена'}")
             bookmark_added_to_db = bookmark_in_db
@@ -200,8 +219,20 @@ async def bookmark_info(callback: CallbackQuery, state: FSMContext, db=None):
 
         # Проверяем, что закладка действительно удалена
         bookmarks = await db_manager.get_bookmarks(user_id)
-        bookmark_exists = any(bm[0] == book_id and bm[1]
-                              == chapter for bm in bookmarks)
+
+        # Поддержка разных форматов данных (кортежи для SQLite, словари для Supabase/PostgreSQL)
+        if bookmarks:
+            if isinstance(bookmarks[0], dict):
+                # Формат словаря (Supabase/PostgreSQL)
+                bookmark_exists = any(
+                    bm['book_id'] == book_id and bm['chapter'] == chapter for bm in bookmarks)
+            else:
+                # Формат кортежа (SQLite)
+                bookmark_exists = any(
+                    bm[0] == book_id and bm[1] == chapter for bm in bookmarks)
+        else:
+            bookmark_exists = False
+
         if not bookmark_exists:
             logger.info(f"Подтверждено удаление закладки из БД")
             bookmark_removed = True
@@ -324,8 +355,18 @@ async def add_bookmark_from_plan(callback: CallbackQuery, state: FSMContext):
     try:
         await db_manager.add_user(user_id, callback.from_user.username or "", callback.from_user.first_name or "")
         bookmarks = await db_manager.get_bookmarks(user_id)
-        bookmark_exists = any(bm[0] == book_id and bm[1]
-                              == chapter for bm in bookmarks)
+
+        # Поддержка разных форматов данных
+        if bookmarks:
+            if isinstance(bookmarks[0], dict):
+                bookmark_exists = any(
+                    bm['book_id'] == book_id and bm['chapter'] == chapter for bm in bookmarks)
+            else:
+                bookmark_exists = any(
+                    bm[0] == book_id and bm[1] == chapter for bm in bookmarks)
+        else:
+            bookmark_exists = False
+
         if not bookmark_exists:
             await db_manager.add_bookmark(user_id, book_id, chapter, display_text)
         await callback.answer("Закладка добавлена")

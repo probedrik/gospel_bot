@@ -48,11 +48,16 @@ async def main() -> None:
         await db_manager.initialize()
 
         # Логируем тип базы данных
-        db_type = "PostgreSQL" if db_manager.is_postgres else "SQLite"
+        if db_manager.is_supabase:
+            db_type = "Supabase"
+        elif db_manager.is_postgres:
+            db_type = "PostgreSQL"
+        else:
+            db_type = "SQLite"
         logger.info(f"🗄️ Используется база данных: {db_type}")
 
         # Для SQLite проверяем права доступа
-        if not db_manager.is_postgres:
+        if not db_manager.is_postgres and not db_manager.is_supabase:
             db_file = db_manager.db_file
             db_dir = os.path.dirname(db_file)
 
@@ -99,14 +104,25 @@ async def main() -> None:
     try:
         # Тестовое соединение с БД
         test_db = await db_manager.get_user(1)
-        logger.info(f"Тестовое соединение с БД успешно: {db_manager.db_file}")
+        if db_manager.is_supabase:
+            logger.info("Тестовое соединение с Supabase успешно")
+        elif db_manager.is_postgres:
+            logger.info("Тестовое соединение с PostgreSQL успешно")
+        else:
+            logger.info(
+                f"Тестовое соединение с БД успешно: {db_manager.db_file}")
     except Exception as e:
         logger.error(f"Ошибка при соединении с БД: {e}", exc_info=True)
 
     # Сохраняем экземпляр БД в контексте диспетчера
     dp["db"] = db_manager
-    logger.info(
-        f"Объект БД добавлен в контекст диспетчера: {db_manager.db_file}")
+    if db_manager.is_supabase:
+        logger.info("Объект Supabase БД добавлен в контекст диспетчера")
+    elif db_manager.is_postgres:
+        logger.info("Объект PostgreSQL БД добавлен в контекст диспетчера")
+    else:
+        logger.info(
+            f"Объект БД добавлен в контекст диспетчера: {db_manager.db_file}")
 
     # Регистрируем middleware
     dp.update.middleware(StateMiddleware())
