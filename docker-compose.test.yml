@@ -1,6 +1,6 @@
 services:
   bible-bot:
-    image: gospel-bot:test  # Локальный образ
+    image: gospel-bot:v2.8.19  # Локальный образ
     container_name: bible-bot-test
     restart: unless-stopped
     volumes:

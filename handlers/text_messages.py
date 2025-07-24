@@ -293,7 +293,7 @@ async def chapter_input(message: Message, state: FSMContext, db=None):
 
         # Создаем кнопки действий для главы
         from utils.bible_data import create_chapter_action_buttons
-        extra_buttons = create_chapter_action_buttons(book_id, chapter)
+        extra_buttons = await create_chapter_action_buttons(book_id, chapter, user_id=message.from_user.id)
 
         # Отправляем объединенную клавиатуру навигации с дополнительными кнопками
         await message.answer(
@@ -367,24 +367,11 @@ async def verse_reference(message: Message, state: FSMContext):
             is_bookmarked = False
             # Для главы (если verse отсутствует или == 0): полноценная навигация и кнопки
             if not verse or verse == '0' or verse == 0:
-                # Кнопки "Толкование проф. Лопухина" и "🤖 Разбор от ИИ"
-                extra_buttons = []
-                # Кнопка толкования Лопухина (проверяем глобальную настройку)
-                from config.settings import ENABLE_LOPUKHIN_COMMENTARY
-                if ENABLE_LOPUKHIN_COMMENTARY and en_book:
-                    extra_buttons.append([
-                        InlineKeyboardButton(
-                            text="Толкование проф. Лопухина",
-                            callback_data=f"open_commentary_{en_book}_{chapter}_0"
-                        )
-                    ])
-                if ENABLE_GPT_EXPLAIN:
-                    extra_buttons.append([
-                        InlineKeyboardButton(
-                            text="🤖 Разбор от ИИ",
-                            callback_data=f"gpt_explain_{en_book}_{chapter}_0"
-                        )
-                    ])
+                # Используем умную функцию создания кнопок
+                from utils.bible_data import create_chapter_action_buttons
+                extra_buttons = await create_chapter_action_buttons(
+                    book_id, chapter, en_book, user_id=message.from_user.id
+                )
 
                 # Отправляем объединенную клавиатуру навигации с дополнительными кнопками
                 await message.answer(
@@ -412,18 +399,44 @@ async def verse_reference(message: Message, state: FSMContext):
                         commentary = lopukhin_commentary.get_commentary(
                             en_book, chapter, 0)
                     if commentary:
+                        # Проверяем сохраненное толкование Лопухина
+                        saved_lopukhin_commentary = None
+                        if book_id:
+                            try:
+                                from database.universal_manager import universal_db_manager
+                                verse_start = int(verse) if verse else 0
+                                saved_lopukhin_commentary = await universal_db_manager.get_saved_commentary(
+                                    message.from_user.id, book_id, chapter, chapter, verse_start, verse_start, "lopukhin"
+                                )
+                            except:
+                                pass
+
+                        lopukhin_text = "📚 Обновить толкование Лопухина" if saved_lopukhin_commentary else "Толкование проф. Лопухина"
                         cb_data = f"open_commentary_{en_book}_{chapter}_{verse}"
                         buttons.append([
                             InlineKeyboardButton(
-                                text="Толкование проф. Лопухина",
+                                text=lopukhin_text,
                                 callback_data=cb_data
                             )
                         ])
                 if ENABLE_GPT_EXPLAIN:
+                    # Проверяем сохраненное ИИ толкование
+                    saved_ai_commentary = None
+                    if book_id:
+                        try:
+                            from database.universal_manager import universal_db_manager
+                            verse_start = int(verse) if verse else 0
+                            saved_ai_commentary = await universal_db_manager.get_saved_commentary(
+                                message.from_user.id, book_id, chapter, chapter, verse_start, verse_start, "ai"
+                            )
+                        except:
+                            pass
+
+                    ai_text = "🔄 Обновить толкование ИИ" if saved_ai_commentary else "🤖 Разбор от ИИ"
                     cb_data = f"gpt_explain_{en_book}_{chapter}_{verse}"
                     buttons.append([
                         InlineKeyboardButton(
-                            text="🤖 Разбор от ИИ",
+                            text=ai_text,
                             callback_data=cb_data
                         )
                     ])
@@ -678,26 +691,55 @@ async def topic_verse_callback(callback: CallbackQuery, state: FSMContext):
                 commentary = lopukhin_commentary.get_commentary(
                     en_book, chapter, 0)
             if commentary:
+                # Проверяем есть ли сохраненное толкование Лопухина для правильного текста кнопки
+                saved_lopukhin_commentary = None
+                if book_id:
+                    try:
+                        from database.universal_manager import universal_db_manager
+                        verse_start = int(verse) if verse else 0
+                        saved_lopukhin_commentary = await universal_db_manager.get_saved_commentary(
+                            callback.from_user.id, book_id, chapter, chapter, verse_start, verse_start, "lopukhin"
+                        )
+                    except:
+                        pass
+
+                # Определяем текст кнопки
+                lopukhin_text = "📚 Обновить толкование Лопухина" if saved_lopukhin_commentary else "Толкование проф. Лопухина"
+
                 if not verse or verse == '0' or verse == 0:
                     cb_data = f"open_commentary_{en_book}_{chapter}_0"
                 else:
                     cb_data = f"open_commentary_{en_book}_{chapter}_{verse}"
                 buttons.append([
                     InlineKeyboardButton(
-                        text="Толкование проф. Лопухина",
+                        text=lopukhin_text,
                         callback_data=cb_data
                     )
                 ])
 
-        # Кнопка ИИ-разбора
-        if ENABLE_GPT_EXPLAIN:
+        # Кнопка ИИ-разбора - используем умную функцию для правильного текста
+        if ENABLE_GPT_EXPLAIN and book_id:
+            # Проверяем есть ли сохраненное толкование для правильного текста кнопки
+            saved_commentary = None
+            try:
+                from database.universal_manager import universal_db_manager
+                verse_start = int(verse) if verse else 0
+                saved_commentary = await universal_db_manager.get_saved_commentary(
+                    callback.from_user.id, book_id, chapter, chapter, verse_start, verse_start, "ai"
+                )
+            except:
+                pass
+
+            # Определяем текст кнопки
+            ai_text = "🔄 Обновить толкование ИИ" if saved_commentary else "🤖 Разбор от ИИ"
+
             if verse is not None:
                 cb_data = f"gpt_explain_{en_book}_{chapter}_{verse}"
             else:
                 cb_data = f"gpt_explain_{en_book}_{chapter}_0"
             buttons.append([
                 InlineKeyboardButton(
-                    text="🤖 Разбор от ИИ",
+                    text=ai_text,
                     callback_data=cb_data
                 )
             ])
@@ -730,9 +772,86 @@ async def open_commentary_callback(callback: CallbackQuery, state: FSMContext):
         commentary = lopukhin_commentary.get_commentary(book, chapter, 0)
     if commentary:
         formatted, opts = format_ai_or_commentary(commentary)
-        msg = await callback.message.answer(formatted, **opts)
-        if state:
-            await state.update_data(last_topic_commentary_msg_id=msg.message_id)
+
+        # Получаем информацию о пользователе и книге для кнопок сохранения
+        user_id = callback.from_user.id if hasattr(
+            callback, "from_user") else callback.message.from_user.id
+        from utils.bible_data import bible_data
+        ru_book = bible_data.book_synonyms.get(book.lower(), book)
+        book_id = bible_data.get_book_id(ru_book)
+
+        if book_id:
+            # Проверяем, есть ли уже сохраненное толкование
+            from database.universal_manager import universal_db_manager as db_manager
+            verse_start = verse if verse != 0 else None
+            saved_commentary = await db_manager.get_saved_commentary(
+                user_id, book_id, chapter, None, verse_start, verse_start, "lopukhin")
+
+            # Формируем callback_data для кнопки сохранения
+            chapter_start = chapter
+            chapter_end_str = "0"  # Всегда одна глава
+            verse_start_str = str(
+                verse_start) if verse_start is not None else "0"
+            verse_end_str = str(
+                verse_start) if verse_start is not None else "0"
+
+            # Создаем кнопки сохранения
+            save_buttons = []
+            if saved_commentary:
+                save_buttons = [
+                    [InlineKeyboardButton(
+                        text="🔄 Обновить толкование",
+                        callback_data=f"save_commentary_{book_id}_{chapter_start}_{chapter_end_str}_{verse_start_str}_{verse_end_str}_lopukhin")]
+                ]
+            else:
+                save_buttons = [
+                    [InlineKeyboardButton(
+                        text="💾 Сохранить толкование",
+                        callback_data=f"save_commentary_{book_id}_{chapter_start}_{chapter_end_str}_{verse_start_str}_{verse_end_str}_lopukhin")]
+                ]
+
+            # Добавляем кнопку "Открыть всю главу" для стихов
+            if verse != 0:
+                # Получаем русское сокращение книги для callback
+                ru_book_abbr = None
+                for abbr, b_id in bible_data.book_abbr_dict.items():
+                    if b_id == book_id:
+                        ru_book_abbr = abbr
+                        break
+
+                if ru_book_abbr:
+                    open_chapter_button = [
+                        InlineKeyboardButton(
+                            text="Открыть всю главу",
+                            callback_data=f"open_chapter_{ru_book_abbr}_{chapter}"
+                        )
+                    ]
+                    # Добавляем кнопку в начало списка
+                    save_buttons.insert(0, open_chapter_button)
+
+            # Отправляем сообщение с кнопками
+            if save_buttons:
+                keyboard = InlineKeyboardMarkup(inline_keyboard=save_buttons)
+                msg = await callback.message.answer(formatted, reply_markup=keyboard, **opts)
+            else:
+                msg = await callback.message.answer(formatted, **opts)
+
+            # Сохраняем данные толкования в состоянии для возможного сохранения
+            if state:
+                await state.update_data(
+                    last_lopukhin_commentary=commentary,
+                    last_lopukhin_reference=f"{ru_book} {chapter}:{verse}" if verse != 0 else f"{ru_book} {chapter}",
+                    last_lopukhin_book_id=book_id,
+                    last_lopukhin_chapter=chapter,
+                    last_lopukhin_chapter_end=None,  # Всегда одна глава
+                    last_lopukhin_verse=verse,
+                    last_lopukhin_verse_end=verse if verse != 0 else None,
+                    last_topic_commentary_msg_id=msg.message_id
+                )
+        else:
+            msg = await callback.message.answer(formatted, **opts)
+            if state:
+                await state.update_data(last_topic_commentary_msg_id=msg.message_id)
     else:
         await callback.message.answer("Толкование не найдено.")
     await callback.answer()
@@ -814,10 +933,76 @@ async def show_commentary_page(callback, book, chapter, all_comments, idx, state
                 text="🤖 Разбор от ИИ",
                 callback_data=f"gpt_explain_{book}_{chapter}_0"
             ))
-    markup = InlineKeyboardMarkup(
-        inline_keyboard=[nav_kb] if nav_kb else [] +
-        ([extra_kb] if extra_kb else [])
-    )
+    # Добавляем кнопки сохранения для толкования Лопухина
+    save_buttons = []
+    if callback:  # Проверяем что callback есть
+        # Получаем информацию о пользователе
+        user_id = callback.from_user.id if hasattr(
+            callback, "from_user") else callback.message.from_user.id
+
+        # Получаем book_id для сохранения
+        from utils.bible_data import bible_data
+        ru_book = bible_data.book_synonyms.get(book.lower(), book)
+        book_id = bible_data.get_book_id(ru_book)
+
+        if book_id:
+            # Проверяем, есть ли уже сохраненное толкование
+            from database.universal_manager import universal_db_manager as db_manager
+            verse_start = v if v != 0 else None
+
+            try:
+                saved_commentary = await db_manager.get_saved_commentary(
+                    user_id, book_id, chapter, None, verse_start, verse_start, "lopukhin")
+
+                # Формируем callback_data для кнопки сохранения
+                chapter_start = chapter
+                chapter_end_str = "0"  # Всегда одна глава
+                verse_start_str = str(
+                    verse_start) if verse_start is not None else "0"
+                verse_end_str = str(
+                    verse_start) if verse_start is not None else "0"
+
+                # Создаем кнопку сохранения
+                if saved_commentary:
+                    save_buttons.append(InlineKeyboardButton(
+                        text="🔄 Обновить толкование",
+                        callback_data=f"save_commentary_{book_id}_{chapter_start}_{chapter_end_str}_{verse_start_str}_{verse_end_str}_lopukhin"))
+                else:
+                    save_buttons.append(InlineKeyboardButton(
+                        text="💾 Сохранить толкование",
+                        callback_data=f"save_commentary_{book_id}_{chapter_start}_{chapter_end_str}_{verse_start_str}_{verse_end_str}_lopukhin"))
+
+                # Добавляем кнопку "Открыть всю главу" для стихов
+                if v != 0:
+                    # Получаем русское сокращение книги для callback
+                    ru_book_abbr = None
+                    for abbr, b_id in bible_data.book_abbr_dict.items():
+                        if b_id == book_id:
+                            ru_book_abbr = abbr
+                            break
+
+                    if ru_book_abbr:
+                        open_chapter_button = InlineKeyboardButton(
+                            text="Открыть всю главу",
+                            callback_data=f"open_chapter_{ru_book_abbr}_{chapter}"
+                        )
+                        save_buttons.insert(0, open_chapter_button)
+            except Exception as e:
+                logger.error(f"Ошибка проверки сохраненного толкования: {e}")
+
+    # Формируем клавиатуру
+    keyboard_rows = []
+    if nav_kb:
+        keyboard_rows.append(nav_kb)
+    if save_buttons:
+        # Добавляем кнопки сохранения по одной в ряд
+        for button in save_buttons:
+            keyboard_rows.append([button])
+    if extra_kb:
+        keyboard_rows.append(extra_kb)
+
+    markup = InlineKeyboardMarkup(inline_keyboard=keyboard_rows)
+
     # Отправляем или редактируем толкование с учётом настроек форматирования
     formatted, opts = format_ai_or_commentary(text, title)
 
@@ -825,29 +1010,98 @@ async def show_commentary_page(callback, book, chapter, all_comments, idx, state
         # Редактируем существующее сообщение (для навигации по страницам)
         try:
             await callback.message.edit_text(formatted, reply_markup=markup, **opts)
+            # Сохраняем данные в состояние для возможного сохранения толкования
+            if state:
+                from utils.bible_data import bible_data
+                ru_book = bible_data.book_synonyms.get(book.lower(), book)
+                book_id = bible_data.get_book_id(ru_book)
+
+                await state.update_data(
+                    last_lopukhin_commentary=text,
+                    last_lopukhin_reference=f"{ru_book} {chapter}:{v}" if v != 0 else f"{ru_book} {chapter}",
+                    last_lopukhin_book_id=book_id,
+                    last_lopukhin_chapter=chapter,
+                    last_lopukhin_chapter_end=None,
+                    last_lopukhin_verse=v,
+                    last_lopukhin_verse_end=v if v != 0 else None
+                )
         except Exception as e:
             # Если редактирование не удалось, отправляем новое сообщение
             msg = await callback.message.answer(formatted, reply_markup=markup, **opts)
             if state:
-                await state.update_data(last_topic_commentary_msg_id=msg.message_id)
+                # Получаем book_id для состояния
+                from utils.bible_data import bible_data
+                ru_book = bible_data.book_synonyms.get(book.lower(), book)
+                book_id = bible_data.get_book_id(ru_book)
+
+                await state.update_data(
+                    last_topic_commentary_msg_id=msg.message_id,
+                    last_lopukhin_commentary=text,
+                    last_lopukhin_reference=f"{ru_book} {chapter}:{v}" if v != 0 else f"{ru_book} {chapter}",
+                    last_lopukhin_book_id=book_id,
+                    last_lopukhin_chapter=chapter,
+                    last_lopukhin_chapter_end=None,
+                    last_lopukhin_verse=v,
+                    last_lopukhin_verse_end=v if v != 0 else None
+                )
     else:
         # Отправляем новое сообщение (первоначальный показ толкования)
         msg = await callback.message.answer(formatted, reply_markup=markup, **opts)
-        # Сохраняем id сообщения с толкованием
+        # Сохраняем id сообщения с толкованием и данные для возможного сохранения
         if state:
-            await state.update_data(last_topic_commentary_msg_id=msg.message_id)
+            # Получаем book_id для состояния
+            from utils.bible_data import bible_data
+            ru_book = bible_data.book_synonyms.get(book.lower(), book)
+            book_id = bible_data.get_book_id(ru_book)
+
+            await state.update_data(
+                last_topic_commentary_msg_id=msg.message_id,
+                last_lopukhin_commentary=text,
+                last_lopukhin_reference=f"{ru_book} {chapter}:{v}" if v != 0 else f"{ru_book} {chapter}",
+                last_lopukhin_book_id=book_id,
+                last_lopukhin_chapter=chapter,
+                last_lopukhin_chapter_end=None,
+                last_lopukhin_verse=v,
+                last_lopukhin_verse_end=v if v != 0 else None
+            )
 
 
 @router.callback_query(F.data.regexp(r'^gpt_explain_([A-Za-z0-9]+)_(\d+)_(\d+)$'))
 async def gpt_explain_callback(callback: CallbackQuery, state: FSMContext = None):
     import re
+    # Сразу отвечаем на callback чтобы избежать timeout
+    await callback.answer("🤖 Генерирую AI-разбор...")
+
+    # Изменяем кнопку на анимированную версию
+    try:
+        current_markup = callback.message.reply_markup
+        if current_markup and current_markup.inline_keyboard:
+            new_buttons = []
+            for row in current_markup.inline_keyboard:
+                new_row = []
+                for button in row:
+                    if button.callback_data and button.callback_data == callback.data:
+                        # Заменяем кнопку "Разбор от ИИ" на анимированную
+                        new_row.append(InlineKeyboardButton(
+                            text="⏳ Генерирую разбор...",
+                            callback_data=button.callback_data
+                        ))
+                    else:
+                        new_row.append(button)
+                new_buttons.append(new_row)
+
+            from aiogram.types import InlineKeyboardMarkup
+            new_markup = InlineKeyboardMarkup(inline_keyboard=new_buttons)
+            await callback.message.edit_reply_markup(reply_markup=new_markup)
+    except Exception as e:
+        logger.error(f"Ошибка изменения кнопки AI: {e}")
+
     # --- AI LIMIT CHECK ---
     user_id = callback.from_user.id if hasattr(
         callback, "from_user") else callback.message.from_user.id
     from handlers.text_messages import ai_check_and_increment_db
     if not await ai_check_and_increment_db(user_id):
         await callback.message.answer("Вы исчерпали лимит ИИ-запросов на сегодня.")
-        await callback.answer()
         return
     match = re.match(
         r'^gpt_explain_([A-Za-z0-9]+)_(\d+)_(\d+)$', callback.data)
@@ -897,14 +1151,45 @@ async def gpt_explain_callback(callback: CallbackQuery, state: FSMContext = None
         formatted, opts = format_ai_or_commentary(
             response, title="🤖 Разбор от ИИ")
 
+        # Проверяем, есть ли уже сохраненное толкование
+        from database.universal_manager import universal_db_manager as db_manager
+        verse_start = verse if verse != 0 else None
+        saved_commentary = await db_manager.get_saved_commentary(
+            user_id, book_id, chapter, None, verse_start, verse_start, "ai")
+
         # Разбиваем на части и отправляем
         text_parts = list(split_text(formatted))
         for idx, part in enumerate(text_parts):
             if idx == len(text_parts) - 1:  # Последняя часть - добавляем кнопки
                 # Создаем кнопки без кнопки AI (exclude_ai=True)
                 from utils.bible_data import create_chapter_action_buttons
-                action_buttons = create_chapter_action_buttons(
-                    book_id, chapter, book, exclude_ai=True)
+                action_buttons = await create_chapter_action_buttons(
+                    book_id, chapter, book, exclude_ai=True, user_id=callback.from_user.id)
+
+                # Добавляем кнопку для сохранения толкования
+                save_buttons = []
+
+                # Формируем callback_data для новой схемы
+                chapter_start = chapter
+                chapter_end_str = "0"  # Всегда одна глава
+                verse_start_str = str(
+                    verse_start) if verse_start is not None else "0"
+                # Для одного стиха verse_end = verse_start
+                verse_end_str = str(
+                    verse_start) if verse_start is not None else "0"
+
+                if saved_commentary:
+                    save_buttons = [
+                        [InlineKeyboardButton(
+                            text="🔄 Обновить толкование",
+                            callback_data=f"save_commentary_{book_id}_{chapter_start}_{chapter_end_str}_{verse_start_str}_{verse_end_str}_ai")]
+                    ]
+                else:
+                    save_buttons = [
+                        [InlineKeyboardButton(
+                            text="💾 Сохранить толкование",
+                            callback_data=f"save_commentary_{book_id}_{chapter_start}_{chapter_end_str}_{verse_start_str}_{verse_end_str}_ai")]
+                    ]
 
                 if verse == 0:  # Для главы - добавляем навигацию
                     # Навигация между главами
@@ -919,27 +1204,80 @@ async def gpt_explain_callback(callback: CallbackQuery, state: FSMContext = None
                     bookmark_key = f"{book_name} {chapter}"
                     is_bookmarked = bookmark_key in bookmarks
 
-                    # Создаем полную клавиатуру навигации с дополнительными кнопками
+                    # Создаем полную клавиатуру навигации с кнопками сохранения
                     from keyboards.main import create_navigation_keyboard
                     keyboard = create_navigation_keyboard(
-                        has_previous, has_next, is_bookmarked, action_buttons)
+                        has_previous, has_next, is_bookmarked, action_buttons + save_buttons)
 
                     msg = await callback.message.answer(part, reply_markup=keyboard, **opts)
                 else:  # Для стиха - только кнопки действий
-                    if action_buttons:
-                        # Добавляем кнопку "Открыть всю главу"
-                        ru_book_abbr = bible_data.get_book_name(book_id)
-                        action_buttons.insert(0, [
+                    # Получаем русское сокращение книги для callback
+                    ru_book_abbr = None
+                    for abbr, b_id in bible_data.book_abbr_dict.items():
+                        if b_id == book_id:
+                            ru_book_abbr = abbr
+                            break
+
+                    # Добавляем кнопку "Открыть всю главу" в начало action_buttons
+                    if ru_book_abbr:
+                        open_chapter_button = [
                             InlineKeyboardButton(
                                 text="Открыть всю главу",
                                 callback_data=f"open_chapter_{ru_book_abbr}_{chapter}"
                             )
-                        ])
+                        ]
+                        # Объединяем все кнопки: "Открыть всю главу" + action_buttons + save_buttons
+                        all_buttons = [open_chapter_button] + \
+                            action_buttons + save_buttons
+                    else:
+                        # Если не найдено сокращение, только action_buttons + save_buttons
+                        all_buttons = action_buttons + save_buttons
+
+                    if all_buttons:
                         keyboard = InlineKeyboardMarkup(
-                            inline_keyboard=action_buttons)
+                            inline_keyboard=all_buttons)
                         msg = await callback.message.answer(part, reply_markup=keyboard, **opts)
                     else:
                         msg = await callback.message.answer(part, **opts)
+
+                # Возвращаем кнопку "🤖 Разбор от ИИ" обратно после загрузки
+                try:
+                    current_markup = callback.message.reply_markup
+                    if current_markup and current_markup.inline_keyboard:
+                        new_buttons = []
+                        for row in current_markup.inline_keyboard:
+                            new_row = []
+                            for button in row:
+                                if button.callback_data and button.callback_data == callback.data and "⏳" in button.text:
+                                    # Возвращаем кнопку обратно к "🤖 Разбор от ИИ"
+                                    new_row.append(InlineKeyboardButton(
+                                        text="🤖 Разбор от ИИ",
+                                        callback_data=button.callback_data
+                                    ))
+                                else:
+                                    new_row.append(button)
+                            new_buttons.append(new_row)
+
+                        from aiogram.types import InlineKeyboardMarkup
+                        new_markup = InlineKeyboardMarkup(
+                            inline_keyboard=new_buttons)
+                        await callback.message.edit_reply_markup(reply_markup=new_markup)
+                except Exception as e:
+                    logger.error(f"Ошибка возврата кнопки AI: {e}")
+
+                # Сохраняем данные толкования в состоянии для возможного сохранения
+                if state:
+                    await state.update_data(
+                        last_ai_commentary=response,
+                        last_ai_reference=reference,
+                        last_ai_book_id=book_id,
+                        last_ai_chapter=chapter,  # Для совместимости, в save_callback это будет chapter_start
+                        last_ai_chapter_end=None,  # Всегда одна глава для тем
+                        last_ai_verse=verse,
+                        # Для стихов = verse, для глав = None
+                        last_ai_verse_end=verse if verse != 0 else None,
+                        last_topic_ai_msg_id=msg.message_id
+                    )
             else:
                 msg = await callback.message.answer(part, **opts)
 
@@ -948,7 +1286,31 @@ async def gpt_explain_callback(callback: CallbackQuery, state: FSMContext = None
     except Exception as e:
         logger.error(f"Ошибка при обращении к ИИ: {e}")
         await callback.message.answer("Произошла ошибка при обращении к ИИ. Попробуйте позже.")
-    await callback.answer()
+
+        # Возвращаем кнопку "🤖 Разбор от ИИ" обратно даже при ошибке
+        try:
+            current_markup = callback.message.reply_markup
+            if current_markup and current_markup.inline_keyboard:
+                new_buttons = []
+                for row in current_markup.inline_keyboard:
+                    new_row = []
+                    for button in row:
+                        if button.callback_data and button.callback_data == callback.data and "⏳" in button.text:
+                            # Возвращаем кнопку обратно к "🤖 Разбор от ИИ"
+                            new_row.append(InlineKeyboardButton(
+                                text="🤖 Разбор от ИИ",
+                                callback_data=button.callback_data
+                            ))
+                        else:
+                            new_row.append(button)
+                    new_buttons.append(new_row)
+
+                from aiogram.types import InlineKeyboardMarkup
+                new_markup = InlineKeyboardMarkup(inline_keyboard=new_buttons)
+                await callback.message.edit_reply_markup(reply_markup=new_markup)
+        except Exception as button_error:
+            logger.error(
+                f"Ошибка возврата кнопки AI при ошибке: {button_error}")
 
 
 @router.message(F.text.in_(get_topics_list()))
@@ -1035,23 +1397,11 @@ async def open_full_chapter_callback(callback: CallbackQuery, state: FSMContext)
         if ru == book_abbr:
             en_book = en
             break
-    extra_buttons = []
-    # Кнопка толкования Лопухина (проверяем глобальную настройку)
-    from config.settings import ENABLE_LOPUKHIN_COMMENTARY
-    if ENABLE_LOPUKHIN_COMMENTARY and en_book:
-        extra_buttons.append([
-            InlineKeyboardButton(
-                text="Толкование проф. Лопухина",
-                callback_data=f"open_commentary_{en_book}_{chapter}_0"
-            )
-        ])
-    if ENABLE_GPT_EXPLAIN:
-        extra_buttons.append([
-            InlineKeyboardButton(
-                text="🤖 Разбор от ИИ",
-                callback_data=f"gpt_explain_{en_book}_{chapter}_0"
-            )
-        ])
+    # Используем умную функцию создания кнопок
+    from utils.bible_data import create_chapter_action_buttons
+    extra_buttons = await create_chapter_action_buttons(
+        book_id, chapter, en_book, user_id=callback.from_user.id
+    )
 
     # Отправляем объединенную клавиатуру навигации с дополнительными кнопками
     await callback.message.answer(
@@ -1112,50 +1462,18 @@ async def delete_related_messages(callback, state: FSMContext):
 
 def format_ai_or_commentary(text, title=None):
     """
-    Форматирует текст для вывода в Telegram с учётом настроек Markdown/MarkdownV2/HTML.
-    title: если задан, будет выделен жирным (или как цитата, если включено)
+    Форматирует текст для вывода в Telegram как цитата.
+    title: если задан, будет выделен жирным
     """
-    from config.settings import COMMENTARY_MARKDOWN_ENABLED, COMMENTARY_MARKDOWN_MODE, MARKDOWN_QUOTE
+    # Возвращаем к формату цитат как было раньше
+    result = f"<blockquote>{text}</blockquote>"
 
-    if not COMMENTARY_MARKDOWN_ENABLED:
-        return f"{title}\n\n{text}" if title else text, {}
-
-    mode = COMMENTARY_MARKDOWN_MODE
-    result = text
-
-    # Экранируем спецсимволы для MarkdownV2
-    if mode.lower() == "markdownv2":
-        def escape_md(s):
-            # Важно: сначала экранируем обратный слэш, потом остальные символы!
-            s = s.replace('\\', '\\\\')
-            chars = r'_ * [ ] ( ) ~ ` > # + - = | { } . !'
-            for c in chars.split():
-                s = s.replace(c, f'\\{c}')
-            return s
-        result = escape_md(result)
-        if title:
-            title = escape_md(title)
-
-    # Форматируем заголовок жирным
+    # Добавляем заголовок если есть
     if title:
-        if mode.lower() == "markdownv2":
-            title = f"*{title}*"
-        elif mode.lower() == "markdown":
-            title = f"**{title}**"
-        elif mode.lower() == "html":
-            title = f"<b>{title}</b>"
-
-    # Применяем режим цитат если включен
-    if MARKDOWN_QUOTE:
-        # Форматируем как визуальную цитату
-        result = f"<blockquote>{result}</blockquote>"
-        # Принудительно используем HTML-режим для цитат
-        mode = "HTML"
-
-    if title:
+        title = f"<b>{title}</b>"
         result = f"{title}\n\n{result}"
 
-    return result, {"parse_mode": mode}
+    return result, {"parse_mode": "HTML"}
 
 
 @router.message(F.text == "📚 План чтения")
@@ -1658,11 +1976,37 @@ async def reading_ai_callback(callback: CallbackQuery, state: FSMContext):
     import re
     from services.universal_reading_plans import universal_reading_plans_service
 
+    # Сразу отвечаем на callback чтобы избежать timeout
+    await callback.answer("🤖 Генерирую AI-разбор...")
+
+    # Изменяем кнопку на анимированную версию
+    try:
+        current_markup = callback.message.reply_markup
+        if current_markup and current_markup.inline_keyboard:
+            new_buttons = []
+            for row in current_markup.inline_keyboard:
+                new_row = []
+                for button in row:
+                    if button.callback_data and button.callback_data == callback.data:
+                        # Заменяем кнопку "Разбор от ИИ" на анимированную
+                        new_row.append(InlineKeyboardButton(
+                            text="⏳ Генерирую разбор...",
+                            callback_data=button.callback_data
+                        ))
+                    else:
+                        new_row.append(button)
+                new_buttons.append(new_row)
+
+            from aiogram.types import InlineKeyboardMarkup
+            new_markup = InlineKeyboardMarkup(inline_keyboard=new_buttons)
+            await callback.message.edit_reply_markup(reply_markup=new_markup)
+    except Exception as e:
+        logger.error(f"Ошибка изменения кнопки AI в планах: {e}")
+
     # --- AI LIMIT CHECK ---
     user_id = callback.from_user.id
     if not await ai_check_and_increment_db(user_id):
         await callback.message.answer("Вы исчерпали лимит ИИ-запросов на сегодня.")
-        await callback.answer()
         return
 
     m = re.match(r'^readingai_(.+)_(\d+)_(\d+)$', callback.data)
@@ -1707,6 +2051,96 @@ async def reading_ai_callback(callback: CallbackQuery, state: FSMContext):
         formatted, opts = format_ai_or_commentary(
             response, title="🤖 Разбор от ИИ")
 
+        # Парсим reading_part для извлечения информации о книге и главах для сохранения
+        from utils.bible_data import bible_data
+        book_id = None
+        chapter_start = None
+        chapter_end = None
+        verse_start = None
+        verse_end = None
+
+        # Пытаемся распарсить ссылку типа "Быт 1:1-2:25"
+        try:
+            import re
+            logger.info(f"Парсим ссылку: '{reading_part}'")
+
+            # Паттерн для ссылок типа "Быт 1:1-2:25", "Быт 1-2", "Быт 1:1-31", "Быт 1"
+            patterns = [
+                # "Быт 1:1-2:25" - диапазон через главы (5 групп)
+                (r'^([А-Яа-яё\s\d]+)\s+(\d+):(\d+)-(\d+):(\d+)$', 'cross_chapter'),
+                # "Быт 1:1-31" - диапазон стихов в одной главе (4 группы)
+                (r'^([А-Яа-яё\s\d]+)\s+(\d+):(\d+)-(\d+)$', 'verse_range'),
+                # "Быт 1-2" - диапазон глав (3 группы)
+                (r'^([А-Яа-яё\s\d]+)\s+(\d+)-(\d+)$', 'chapter_range'),
+                # "Быт 1:1" - один стих (3 группы)
+                (r'^([А-Яа-яё\s\d]+)\s+(\d+):(\d+)$', 'single_verse'),
+                # "Быт 1" - вся глава (2 группы)
+                (r'^([А-Яа-яё\s\d]+)\s+(\d+)$', 'single_chapter')
+            ]
+
+            for pattern, pattern_type in patterns:
+                match = re.match(pattern, reading_part.strip())
+                if match:
+                    book_name = match.group(1).strip()
+                    logger.info(
+                        f"Найдена книга: '{book_name}', тип: {pattern_type}")
+
+                    if pattern_type == 'cross_chapter':  # "Быт 1:1-2:25"
+                        chapter_start = int(match.group(2))
+                        verse_start = int(match.group(3))
+                        chapter_end = int(match.group(4))
+                        verse_end = int(match.group(5))
+                        logger.info(
+                            f"Диапазон через главы: {chapter_start}:{verse_start}-{chapter_end}:{verse_end}")
+
+                    elif pattern_type == 'verse_range':  # "Быт 1:1-31"
+                        chapter_start = int(match.group(2))
+                        chapter_end = None  # Одна глава
+                        verse_start = int(match.group(3))
+                        verse_end = int(match.group(4))
+                        logger.info(
+                            f"Диапазон стихов: {chapter_start}:{verse_start}-{verse_end}")
+
+                    elif pattern_type == 'chapter_range':  # "Быт 1-2"
+                        chapter_start = int(match.group(2))
+                        chapter_end = int(match.group(3))
+                        verse_start = None
+                        verse_end = None
+                        logger.info(
+                            f"Диапазон глав: {chapter_start}-{chapter_end}")
+
+                    elif pattern_type == 'single_verse':  # "Быт 1:1"
+                        chapter_start = int(match.group(2))
+                        chapter_end = None  # Одна глава
+                        verse_start = int(match.group(3))
+                        verse_end = verse_start
+                        logger.info(
+                            f"Один стих: {chapter_start}:{verse_start}")
+
+                    elif pattern_type == 'single_chapter':  # "Быт 1"
+                        chapter_start = int(match.group(2))
+                        chapter_end = None  # Одна глава
+                        verse_start = None
+                        verse_end = None
+                        logger.info(f"Одна глава: {chapter_start}")
+
+                    # Получаем book_id
+                    book_id = bible_data.get_book_id(book_name)
+                    logger.info(
+                        f"book_id: {book_id}, chapter_start: {chapter_start}, chapter_end: {chapter_end}, verse_start: {verse_start}, verse_end: {verse_end}")
+                    break
+
+        except Exception as parse_error:
+            logger.error(
+                f"Ошибка парсинга ссылки {reading_part}: {parse_error}")
+
+        # Проверяем, есть ли уже сохраненное толкование (если удалось распарсить)
+        saved_commentary = None
+        if book_id and chapter_start is not None:
+            from database.universal_manager import universal_db_manager as db_manager
+            saved_commentary = await db_manager.get_saved_commentary(
+                user_id, book_id, chapter_start, chapter_end, verse_start, verse_end, "ai")
+
         from utils.text_utils import split_text
         text_parts = list(split_text(formatted))
 
@@ -1731,8 +2165,64 @@ async def reading_ai_callback(callback: CallbackQuery, state: FSMContext):
                     )]
                 ]
 
+                # Добавляем кнопку сохранения толкования, если удалось распарсить ссылку
+                if book_id and chapter_start is not None:
+                    # Формируем callback_data с правильной обработкой None
+                    chapter_end_str = chapter_end if chapter_end is not None else "0"
+                    verse_start_str = verse_start if verse_start is not None else "0"
+                    verse_end_str = verse_end if verse_end is not None else "0"
+
+                    if saved_commentary:
+                        ai_buttons.insert(-1, [InlineKeyboardButton(
+                            text="🔄 Обновить толкование",
+                            callback_data=f"save_commentary_{book_id}_{chapter_start}_{chapter_end_str}_{verse_start_str}_{verse_end_str}_ai"
+                        )])
+                    else:
+                        ai_buttons.insert(-1, [InlineKeyboardButton(
+                            text="💾 Сохранить толкование",
+                            callback_data=f"save_commentary_{book_id}_{chapter_start}_{chapter_end_str}_{verse_start_str}_{verse_end_str}_ai"
+                        )])
+
                 kb = InlineKeyboardMarkup(inline_keyboard=ai_buttons)
                 msg = await callback.message.answer(part, reply_markup=kb, **opts)
+
+                # Возвращаем кнопку "🤖 Разбор от ИИ" обратно после загрузки
+                try:
+                    current_markup = callback.message.reply_markup
+                    if current_markup and current_markup.inline_keyboard:
+                        new_buttons = []
+                        for row in current_markup.inline_keyboard:
+                            new_row = []
+                            for button in row:
+                                if button.callback_data and button.callback_data == callback.data and "⏳" in button.text:
+                                    # Возвращаем кнопку обратно к "🤖 Разбор от ИИ"
+                                    new_row.append(InlineKeyboardButton(
+                                        text="🤖 Разбор от ИИ",
+                                        callback_data=button.callback_data
+                                    ))
+                                else:
+                                    new_row.append(button)
+                            new_buttons.append(new_row)
+
+                        from aiogram.types import InlineKeyboardMarkup
+                        new_markup = InlineKeyboardMarkup(
+                            inline_keyboard=new_buttons)
+                        await callback.message.edit_reply_markup(reply_markup=new_markup)
+                except Exception as e:
+                    logger.error(f"Ошибка возврата кнопки AI в планах: {e}")
+
+                # Сохраняем данные толкования в состоянии для возможного сохранения
+                if state and book_id and chapter_start is not None:
+                    await state.update_data(
+                        last_ai_commentary=response,
+                        last_ai_reference=reading_part,
+                        last_ai_book_id=book_id,
+                        last_ai_chapter=chapter_start,
+                        last_ai_chapter_end=chapter_end,  # Добавляем chapter_end
+                        last_ai_verse=verse_start or 0,
+                        last_ai_verse_end=verse_end or 0,  # Добавляем verse_end
+                        last_topic_ai_msg_id=msg.message_id
+                    )
             else:
                 msg = await callback.message.answer(part, **opts)
 
@@ -1742,6 +2232,178 @@ async def reading_ai_callback(callback: CallbackQuery, state: FSMContext):
         logger.error(f"Ошибка при обращении к ИИ: {e}")
         await callback.message.answer("Произошла ошибка при обращении к ИИ. Попробуйте позже.")
 
+        # Возвращаем кнопку "🤖 Разбор от ИИ" обратно даже при ошибке
+        try:
+            current_markup = callback.message.reply_markup
+            if current_markup and current_markup.inline_keyboard:
+                new_buttons = []
+                for row in current_markup.inline_keyboard:
+                    new_row = []
+                    for button in row:
+                        if button.callback_data and button.callback_data == callback.data and "⏳" in button.text:
+                            # Возвращаем кнопку обратно к "🤖 Разбор от ИИ"
+                            new_row.append(InlineKeyboardButton(
+                                text="🤖 Разбор от ИИ",
+                                callback_data=button.callback_data
+                            ))
+                        else:
+                            new_row.append(button)
+                    new_buttons.append(new_row)
+
+                from aiogram.types import InlineKeyboardMarkup
+                new_markup = InlineKeyboardMarkup(inline_keyboard=new_buttons)
+                await callback.message.edit_reply_markup(reply_markup=new_markup)
+        except Exception as button_error:
+            logger.error(
+                f"Ошибка возврата кнопки AI при ошибке в планах: {button_error}")
+
+
+# Обработчики для сохранения/удаления толкований
+@router.callback_query(F.data.regexp(r'^save_commentary_(\d+)_(\d+)_(\d+)_(\d+)_(\d+)_(ai|lopukhin)$'))
+async def save_commentary_callback(callback: CallbackQuery, state: FSMContext):
+    """Сохраняет толкование пользователя"""
+    import re
+    from database.universal_manager import universal_db_manager as db_manager
+    from utils.bible_data import bible_data
+    from utils.text_formatter import format_reference_display
+
+    match = re.match(
+        r'^save_commentary_(\d+)_(\d+)_(\d+)_(\d+)_(\d+)_(ai|lopukhin)$', callback.data)
+    if not match:
+        await callback.answer("Ошибка сохранения")
+        return
+
+    book_id = int(match.group(1))
+    chapter_start = int(match.group(2))
+    chapter_end_raw = int(match.group(3))
+    verse_start_raw = int(match.group(4))
+    verse_end_raw = int(match.group(5))
+    commentary_type = match.group(6)
+    user_id = callback.from_user.id
+
+    # Преобразуем "0" обратно в None для chapter_end и verse_start/verse_end
+    chapter_end = chapter_end_raw if chapter_end_raw != 0 else None
+    verse_start = verse_start_raw if verse_start_raw != 0 else None
+    verse_end = verse_end_raw if verse_end_raw != 0 else None
+
+    # Получаем данные толкования из состояния
+    if not state:
+        await callback.answer("Данные толкования не найдены")
+        return
+
+    data = await state.get_data()
+    commentary_text = data.get('last_ai_commentary', '') if commentary_type == 'ai' else data.get(
+        'last_lopukhin_commentary', '')
+
+    if not commentary_text:
+        await callback.answer("Текст толкования не найден")
+        return
+
+    # Формируем ссылку для отображения
+    book_name = bible_data.get_book_name(book_id)
+
+    # Формируем reference_text в зависимости от типа ссылки
+    if chapter_end is not None and chapter_end != chapter_start:
+        # Диапазон глав: "Быт 1-2" или "Быт 1:1-2:25"
+        if verse_start is not None:
+            reference_text = f"{book_name} {chapter_start}:{verse_start}-{chapter_end}:{verse_end or verse_start}"
+        else:
+            reference_text = f"{book_name} {chapter_start}-{chapter_end}"
+    else:
+        # Одна глава: "Быт 1" или "Быт 1:1" или "Быт 1:1-31"
+        if verse_start is not None:
+            if verse_end is not None and verse_end != verse_start:
+                reference_text = f"{book_name} {chapter_start}:{verse_start}-{verse_end}"
+            else:
+                reference_text = f"{book_name} {chapter_start}:{verse_start}"
+        else:
+            reference_text = f"{book_name} {chapter_start}"
+
+    # Сохраняем толкование
+    success = await db_manager.save_commentary(
+        user_id, book_id, chapter_start, chapter_end, verse_start, verse_end,
+        reference_text, commentary_text, commentary_type
+    )
+
+    if success:
+        await callback.answer("✅ Толкование сохранено!")
+
+        # Обновляем кнопку с "Сохранить" на "Обновить"
+        try:
+            current_markup = callback.message.reply_markup
+            if current_markup and current_markup.inline_keyboard:
+                new_buttons = []
+
+                for row in current_markup.inline_keyboard:
+                    new_row = []
+                    for button in row:
+                        if button.callback_data and button.callback_data.startswith('save_commentary_'):
+                            # Заменяем кнопку "Сохранить" на "Обновить"
+                            new_row.append(InlineKeyboardButton(
+                                text="🔄 Обновить толкование",
+                                callback_data=button.callback_data
+                            ))
+                        else:
+                            new_row.append(button)
+                    new_buttons.append(new_row)
+
+                from aiogram.types import InlineKeyboardMarkup
+                new_markup = InlineKeyboardMarkup(inline_keyboard=new_buttons)
+                await callback.message.edit_reply_markup(reply_markup=new_markup)
+        except Exception as e:
+            logger.error(f"Ошибка обновления кнопки: {e}")
+    else:
+        await callback.answer("❌ Ошибка сохранения")
+
+
+@router.callback_query(F.data == "show_saved_commentaries")
+async def show_saved_commentaries(callback: CallbackQuery, state: FSMContext):
+    """Показывает список сохраненных толкований пользователя"""
+    from database.universal_manager import universal_db_manager as db_manager
+    from utils.text_formatter import create_commentary_summary
+
+    user_id = callback.from_user.id
+    commentaries = await db_manager.get_user_commentaries(user_id, 20)
+
+    if not commentaries:
+        await callback.message.answer("У вас нет сохраненных толкований.")
+        await callback.answer()
+        return
+
+    text = "📚 <b>Ваши сохраненные толкования:</b>\n\n"
+    buttons = []
+
+    # Показываем только первые 10
+    for i, commentary in enumerate(commentaries[:10], 1):
+        reference = commentary.get('reference_text', '')
+        commentary_text = commentary.get('commentary_text', '')
+        commentary_type = commentary.get('commentary_type', 'ai')
+
+        # Создаем краткое резюме
+        summary = create_commentary_summary(commentary_text, 100)
+
+        # Иконка в зависимости от типа
+        icon = "🤖" if commentary_type == 'ai' else "📖"
+
+        text += f"{i}. {icon} <b>{reference}</b>\n<i>{summary}</i>\n\n"
+
+        # Добавляем кнопку для просмотра
+        buttons.append([InlineKeyboardButton(
+            text=f"{i}. {reference}",
+            callback_data=f"view_saved_{commentary['id']}"
+        )])
+
+    if len(commentaries) > 10:
+        text += f"<i>...и еще {len(commentaries) - 10} толкований</i>"
+
+    # Добавляем кнопку закрытия
+    buttons.append([InlineKeyboardButton(
+        text="❌ Закрыть",
+        callback_data="close_message"
+    )])
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+    await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
     await callback.answer()
 
 

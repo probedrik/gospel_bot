@@ -214,6 +214,57 @@ class PostgreSQLManager:
                 ON reading_parts_progress(user_id, plan_id)
                 ''')
 
+                # Таблица сохраненных толкований
+                await conn.execute('''
+                CREATE TABLE IF NOT EXISTS saved_commentaries (
+                    id SERIAL PRIMARY KEY,
+                    user_id BIGINT REFERENCES users(user_id) ON DELETE CASCADE,
+                    book_id INTEGER NOT NULL,
+                    chapter_start INTEGER NOT NULL,
+                    chapter_end INTEGER,
+                    verse_start INTEGER,
+                    verse_end INTEGER,
+                    reference_text TEXT NOT NULL,
+                    commentary_text TEXT NOT NULL,
+                    commentary_type TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                ''')
+
+                # Индекс для быстрого поиска сохраненных толкований пользователя
+                await conn.execute('''
+                CREATE INDEX IF NOT EXISTS idx_saved_commentaries_user_id 
+                ON saved_commentaries(user_id)
+                ''')
+
+                # Индекс для быстрого поиска сохраненных толкований по ссылке
+                await conn.execute('''
+                CREATE INDEX IF NOT EXISTS idx_saved_commentaries_reference 
+                ON saved_commentaries(user_id, book_id, chapter_start, chapter_end, verse_start, verse_end, commentary_type)
+                ''')
+
+                # Таблица библейских тем
+                await conn.execute('''
+                CREATE TABLE IF NOT EXISTS bible_topics (
+                    id SERIAL PRIMARY KEY,
+                    topic_name TEXT NOT NULL UNIQUE,
+                    verses TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                ''')
+
+                # Индекс для быстрого поиска библейских тем
+                await conn.execute('''
+                CREATE INDEX IF NOT EXISTS idx_bible_topics_name ON bible_topics(topic_name)
+                ''')
+
+                # Индекс для полнотекстового поиска библейских тем
+                await conn.execute('''
+                CREATE INDEX IF NOT EXISTS idx_bible_topics_fts ON bible_topics USING gin(to_tsvector('russian', topic_name))
+                ''')
+
                 logger.info("Все таблицы PostgreSQL созданы")
 
             except Exception as e:
@@ -562,6 +613,334 @@ class PostgreSQLManager:
     async def mark_reading_day_completed_async(self, user_id: int, plan_id: str, day: int) -> bool:
         """Алиас для mark_reading_day_completed"""
         return await self.mark_reading_day_completed(user_id, plan_id, day)
+
+    # AI Limits методы
+    async def get_ai_limit(self, user_id: int, date: str) -> int:
+        """Возвращает количество ИИ-запросов пользователя за дату (строка YYYY-MM-DD)"""
+        try:
+            query = """
+                SELECT count FROM ai_limits 
+                WHERE user_id = $1 AND date = $2
+            """
+            result = await self.pool.fetchval(query, user_id, date)
+            return result if result is not None else 0
+        except Exception as e:
+            logger.error(f"Ошибка получения AI лимита: {e}")
+            return 0
+
+    async def increment_ai_limit(self, user_id: int, date: str) -> int:
+        """Увеличивает счетчик ИИ-запросов пользователя за дату, возвращает новое значение"""
+        try:
+            # Используем UPSERT для атомарной операции
+            query = """
+                INSERT INTO ai_limits (user_id, date, count) 
+                VALUES ($1, $2, 1)
+                ON CONFLICT (user_id, date) 
+                DO UPDATE SET count = ai_limits.count + 1
+                RETURNING count
+            """
+            result = await self.pool.fetchval(query, user_id, date)
+            return result if result is not None else 1
+        except Exception as e:
+            logger.error(f"Ошибка увеличения AI лимита: {e}")
+            return 0
+
+    async def reset_ai_limit(self, user_id: int, date: str) -> None:
+        """Сбросить лимит ИИ-запросов пользователя за дату (удаляет запись)"""
+        try:
+            query = """
+                DELETE FROM ai_limits 
+                WHERE user_id = $1 AND date = $2
+            """
+            await self.pool.execute(query, user_id, date)
+        except Exception as e:
+            logger.error(f"Ошибка сброса AI лимита: {e}")
+
+    async def get_ai_stats(self, date: str, limit: int = 10) -> list:
+        """Топ пользователей по ИИ-запросам за дату (user_id, count)"""
+        try:
+            query = """
+                SELECT user_id, count FROM ai_limits 
+                WHERE date = $1 
+                ORDER BY count DESC 
+                LIMIT $2
+            """
+            rows = await self.pool.fetch(query, date, limit)
+            return [(row['user_id'], row['count']) for row in rows]
+        except Exception as e:
+            logger.error(f"Ошибка получения AI статистики: {e}")
+            return []
+
+    async def get_ai_stats_alltime(self, limit: int = 10) -> list:
+        """Топ пользователей по ИИ-запросам за всё время (user_id, total_count)"""
+
+        try:
+            query = """
+                SELECT user_id, SUM(count) as total
+                FROM ai_limits
+                GROUP BY user_id
+                ORDER BY total DESC
+                LIMIT $1
+            """
+            rows = await self.pool.fetch(query, limit)
+            return [(row['user_id'], row['total']) for row in rows]
+        except Exception as e:
+            logger.error(f"Ошибка получения общей AI статистики: {e}")
+            return []
+
+    # Методы для сохраненных толкований
+    async def save_commentary(self, user_id: int, book_id: int, chapter_start: int,
+                              chapter_end: int = None, verse_start: int = None, verse_end: int = None,
+                              reference_text: str = "", commentary_text: str = "",
+                              commentary_type: str = "ai") -> bool:
+        """Сохраняет толкование для пользователя"""
+        try:
+            # Проверяем, есть ли уже толкование для этой ссылки
+            check_query = """
+                SELECT id FROM saved_commentaries 
+                WHERE user_id = $1 AND book_id = $2 AND chapter_start = $3 
+                AND chapter_end IS NOT DISTINCT FROM $4
+                AND verse_start IS NOT DISTINCT FROM $5 
+                AND verse_end IS NOT DISTINCT FROM $6
+                AND commentary_type = $7
+            """
+            existing = await self.pool.fetchrow(
+                check_query, user_id, book_id, chapter_start, chapter_end,
+                verse_start, verse_end, commentary_type
+            )
+
+            if existing:
+                # Обновляем существующее
+                update_query = """
+                    UPDATE saved_commentaries 
+                    SET reference_text = $1, commentary_text = $2, updated_at = NOW()
+                    WHERE id = $3
+                """
+                await self.pool.execute(update_query, reference_text, commentary_text, existing['id'])
+            else:
+                # Создаем новое
+                insert_query = """
+                    INSERT INTO saved_commentaries 
+                    (user_id, book_id, chapter_start, chapter_end, verse_start, verse_end,
+                     reference_text, commentary_text, commentary_type)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                """
+                await self.pool.execute(
+                    insert_query, user_id, book_id, chapter_start, chapter_end,
+                    verse_start, verse_end, reference_text, commentary_text, commentary_type
+                )
+
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка сохранения толкования: {e}")
+            return False
+
+    async def get_saved_commentary(self, user_id: int, book_id: int, chapter_start: int,
+                                   chapter_end: int = None, verse_start: int = None, verse_end: int = None,
+                                   commentary_type: str = "ai") -> Optional[str]:
+        """Получает сохраненное толкование"""
+        try:
+            query = """
+                SELECT commentary_text FROM saved_commentaries 
+                WHERE user_id = $1 AND book_id = $2 AND chapter_start = $3 
+                AND chapter_end IS NOT DISTINCT FROM $4
+                AND verse_start IS NOT DISTINCT FROM $5 
+                AND verse_end IS NOT DISTINCT FROM $6
+                AND commentary_type = $7
+            """
+            result = await self.pool.fetchval(
+                query, user_id, book_id, chapter_start, chapter_end,
+                verse_start, verse_end, commentary_type
+            )
+            return result
+        except Exception as e:
+            logger.error(f"Ошибка получения сохраненного толкования: {e}")
+            return None
+
+    async def delete_saved_commentary(self, user_id: int, book_id: int, chapter_start: int,
+                                      chapter_end: int = None, verse_start: int = None, verse_end: int = None,
+                                      commentary_type: str = "ai") -> bool:
+        """Удаляет сохраненное толкование"""
+        try:
+            query = """
+                DELETE FROM saved_commentaries 
+                WHERE user_id = $1 AND book_id = $2 AND chapter_start = $3 
+                AND chapter_end IS NOT DISTINCT FROM $4
+                AND verse_start IS NOT DISTINCT FROM $5 
+                AND verse_end IS NOT DISTINCT FROM $6
+                AND commentary_type = $7
+            """
+            await self.pool.execute(
+                query, user_id, book_id, chapter_start, chapter_end,
+                verse_start, verse_end, commentary_type
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка удаления толкования: {e}")
+            return False
+
+    async def get_user_commentaries(self, user_id: int, limit: int = 50) -> list:
+        """Получает последние сохраненные толкования пользователя"""
+        try:
+            query = """
+                SELECT reference_text, commentary_text, commentary_type, created_at
+                FROM saved_commentaries 
+                WHERE user_id = $1
+                ORDER BY created_at DESC
+                LIMIT $2
+            """
+            rows = await self.pool.fetch(query, user_id, limit)
+            return [dict(row) for row in rows]
+        except Exception as e:
+            logger.error(f"Ошибка получения толкований пользователя: {e}")
+            return []
+
+    # Методы для библейских тем
+    async def get_bible_topics(self, search_query: str = "", limit: int = 50) -> list:
+        """Получает список библейских тем с возможностью поиска"""
+        try:
+            if search_query:
+                query = """
+                    SELECT id, topic_name, verses 
+                    FROM bible_topics 
+                    WHERE topic_name ILIKE $1
+                    ORDER BY topic_name
+                    LIMIT $2
+                """
+                rows = await self.pool.fetch(query, f'%{search_query}%', limit)
+            else:
+                query = """
+                    SELECT id, topic_name, verses 
+                    FROM bible_topics 
+                    ORDER BY topic_name
+                    LIMIT $1
+                """
+                rows = await self.pool.fetch(query, limit)
+
+            return [dict(row) for row in rows]
+        except Exception as e:
+            logger.error(f"Ошибка получения тем: {e}")
+            return []
+
+    async def get_topic_by_name(self, topic_name: str) -> dict:
+        """Получает тему по точному названию"""
+        try:
+            query = """
+                SELECT id, topic_name, verses 
+                FROM bible_topics 
+                WHERE topic_name = $1
+            """
+            row = await self.pool.fetchrow(query, topic_name)
+            return dict(row) if row else {}
+        except Exception as e:
+            logger.error(f"Ошибка получения темы '{topic_name}': {e}")
+            return {}
+
+    async def get_topic_by_id(self, topic_id: int) -> dict:
+        """Получает тему по ID"""
+        try:
+            query = """
+                SELECT id, topic_name, verses 
+                FROM bible_topics 
+                WHERE id = $1
+            """
+            row = await self.pool.fetchrow(query, topic_id)
+            return dict(row) if row else {}
+        except Exception as e:
+            logger.error(f"Ошибка получения темы по ID {topic_id}: {e}")
+            return {}
+
+    async def search_topics_fulltext(self, search_query: str, limit: int = 20) -> list:
+        """Полнотекстовый поиск по темам (PostgreSQL FTS)"""
+        try:
+            query = """
+                SELECT id, topic_name, verses,
+                       ts_rank(to_tsvector('russian', topic_name), plainto_tsquery('russian', $1)) as rank
+                FROM bible_topics 
+                WHERE to_tsvector('russian', topic_name) @@ plainto_tsquery('russian', $1)
+                ORDER BY rank DESC, topic_name
+                LIMIT $2
+            """
+            rows = await self.pool.fetch(query, search_query, limit)
+            return [dict(row) for row in rows]
+        except Exception as e:
+            logger.warning(f"Ошибка FTS поиска, переходим к обычному: {e}")
+            # Fallback к обычному поиску
+            return await self.get_bible_topics(search_query, limit)
+
+    async def get_topics_count(self) -> int:
+        """Получает общее количество тем"""
+        try:
+            query = "SELECT COUNT(*) FROM bible_topics"
+            result = await self.pool.fetchval(query)
+            return result if result is not None else 0
+        except Exception as e:
+            logger.error(f"Ошибка получения количества тем: {e}")
+            return 0
+
+    async def add_bible_topic(self, topic_name: str, verses: str) -> bool:
+        """Добавляет новую библейскую тему"""
+        try:
+            query = """
+                INSERT INTO bible_topics (topic_name, verses)
+                VALUES ($1, $2)
+                RETURNING id
+            """
+            result = await self.pool.fetchval(query, topic_name, verses)
+            return result is not None
+        except Exception as e:
+            logger.error(f"Ошибка добавления темы '{topic_name}': {e}")
+            return False
+
+    async def update_bible_topic(self, topic_id: int, topic_name: str = None, verses: str = None) -> bool:
+        """Обновляет существующую библейскую тему"""
+        try:
+            updates = []
+            params = []
+            param_count = 1
+
+            if topic_name is not None:
+                updates.append(f"topic_name = ${param_count}")
+                params.append(topic_name)
+                param_count += 1
+
+            if verses is not None:
+                updates.append(f"verses = ${param_count}")
+                params.append(verses)
+                param_count += 1
+
+            if not updates:
+                return False
+
+            updates.append(f"updated_at = ${param_count}")
+            params.append(datetime.now())
+            param_count += 1
+
+            params.append(topic_id)  # для WHERE
+
+            query = f"""
+                UPDATE bible_topics 
+                SET {', '.join(updates)}
+                WHERE id = ${param_count}
+                RETURNING id
+            """
+
+            result = await self.pool.fetchval(query, *params)
+            return result is not None
+
+        except Exception as e:
+            logger.error(f"Ошибка обновления темы ID {topic_id}: {e}")
+            return False
+
+    async def delete_bible_topic(self, topic_id: int) -> bool:
+        """Удаляет библейскую тему"""
+        try:
+            query = "DELETE FROM bible_topics WHERE id = $1 RETURNING id"
+            result = await self.pool.fetchval(query, topic_id)
+            return result is not None
+        except Exception as e:
+            logger.error(f"Ошибка удаления темы ID {topic_id}: {e}")
+            return False
 
 
 # Создаем глобальный экземпляр

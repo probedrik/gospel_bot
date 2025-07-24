@@ -138,7 +138,7 @@ async def add_bookmark(callback: CallbackQuery, state: FSMContext, db=None):
 
         # Создаем кнопки действий для главы (исключаем AI кнопку если нужно)
         from utils.bible_data import create_chapter_action_buttons
-        extra_buttons = create_chapter_action_buttons(book_id, chapter)
+        extra_buttons = await create_chapter_action_buttons(book_id, chapter, user_id=user_id)
 
         # Редактируем существующее сообщение с навигацией, обновляя статус закладки
         await callback.message.edit_reply_markup(
@@ -253,7 +253,7 @@ async def bookmark_info(callback: CallbackQuery, state: FSMContext, db=None):
 
         # Создаем кнопки действий для главы
         from utils.bible_data import create_chapter_action_buttons
-        extra_buttons = create_chapter_action_buttons(book_id, chapter)
+        extra_buttons = await create_chapter_action_buttons(book_id, chapter, user_id=callback.from_user.id)
 
         # Отправляем сообщение об успешном удалении
         await callback.answer("Закладка удалена")
@@ -317,7 +317,7 @@ async def bookmark_selected(callback: CallbackQuery, state: FSMContext, db=None)
 
         # Создаем кнопки действий для главы
         from utils.bible_data import create_chapter_action_buttons
-        extra_buttons = create_chapter_action_buttons(book_id, chapter)
+        extra_buttons = await create_chapter_action_buttons(book_id, chapter, user_id=callback.from_user.id)
 
         # Отправляем объединенную клавиатуру навигации с дополнительными кнопками
         await callback.message.answer(

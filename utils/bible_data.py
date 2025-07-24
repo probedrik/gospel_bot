@@ -389,15 +389,17 @@ def get_english_book_abbreviation(book_id):
     return None
 
 
-def create_chapter_action_buttons(book_id, chapter, en_book=None, exclude_ai=False):
+async def create_chapter_action_buttons(book_id, chapter, en_book=None, exclude_ai=False, user_id=None):
     """
     Создает кнопки действий для главы (Толкование Лопухина и Разбор от ИИ).
+    Учитывает сохраненные толкования пользователя.
 
     Args:
         book_id: ID книги
         chapter: номер главы
         en_book: английское сокращение книги (если None, будет определено автоматически)
         exclude_ai: если True, исключает кнопку AI разбора
+        user_id: ID пользователя для проверки сохраненных толкований
 
     Returns:
         list: Список кнопок для использования в клавиатуре
@@ -411,11 +413,36 @@ def create_chapter_action_buttons(book_id, chapter, en_book=None, exclude_ai=Fal
 
     buttons = []
 
+    # Проверяем сохраненные толкования если user_id передан
+    saved_ai_commentary = None
+    saved_lopukhin_commentary = None
+
+    if user_id:
+        try:
+            from database.universal_manager import universal_db_manager
+
+            # Проверяем ИИ толкования (для всей главы - verse 0)
+            saved_ai_commentary = await universal_db_manager.get_saved_commentary(
+                user_id, book_id, chapter, chapter, 0, 0, "ai"
+            )
+
+            # Проверяем толкования Лопухина (для всей главы - verse 0)
+            saved_lopukhin_commentary = await universal_db_manager.get_saved_commentary(
+                user_id, book_id, chapter, chapter, 0, 0, "lopukhin"
+            )
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Ошибка при проверке сохраненных толкований: {e}")
+
     # Кнопка толкования Лопухина (только если есть en_book)
     if ENABLE_LOPUKHIN_COMMENTARY and en_book:
+        # Определяем текст кнопки в зависимости от наличия сохраненного толкования
+        lopukhin_text = "📚 Обновить толкование Лопухина" if saved_lopukhin_commentary else "Толкование проф. Лопухина"
+
         buttons.append([
             InlineKeyboardButton(
-                text="Толкование проф. Лопухина",
+                text=lopukhin_text,
                 callback_data=f"open_commentary_{en_book}_{chapter}_0"
             )
         ])
@@ -424,9 +451,13 @@ def create_chapter_action_buttons(book_id, chapter, en_book=None, exclude_ai=Fal
     if ENABLE_GPT_EXPLAIN and not exclude_ai:
         # Используем en_book если есть, иначе UNKNOWN
         book_param = en_book if en_book else "UNKNOWN"
+
+        # Определяем текст кнопки в зависимости от наличия сохраненного толкования
+        ai_text = "🔄 Обновить толкование ИИ" if saved_ai_commentary else "🤖 Разбор от ИИ"
+
         buttons.append([
             InlineKeyboardButton(
-                text="🤖 Разбор от ИИ",
+                text=ai_text,
                 callback_data=f"gpt_explain_{book_param}_{chapter}_0"
             )
         ])

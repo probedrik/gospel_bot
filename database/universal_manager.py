@@ -4,7 +4,7 @@
 """
 import logging
 import os
-from typing import Optional, Union
+from typing import Optional, Union, List, Dict
 
 from .db_manager import DatabaseManager
 from .postgres_manager import PostgreSQLManager
@@ -210,6 +210,88 @@ class UniversalDatabaseManager:
         if not self.is_postgres and not self.is_supabase:
             return self.manager.db_file
         return None
+
+    # AI Limits методы
+    async def get_ai_limit(self, user_id: int, date: str) -> int:
+        """Возвращает количество ИИ-запросов пользователя за дату (строка YYYY-MM-DD)"""
+        return await self.manager.get_ai_limit(user_id, date)
+
+    async def increment_ai_limit(self, user_id: int, date: str) -> int:
+        """Увеличивает счетчик ИИ-запросов пользователя за дату, возвращает новое значение"""
+        return await self.manager.increment_ai_limit(user_id, date)
+
+    async def reset_ai_limit(self, user_id: int, date: str) -> None:
+        """Сбросить лимит ИИ-запросов пользователя за дату (обнуляет счетчик)"""
+        return await self.manager.reset_ai_limit(user_id, date)
+
+    async def get_ai_stats(self, date: str, limit: int = 10) -> list:
+        """Топ пользователей по ИИ-запросам за дату (user_id, count)"""
+        return await self.manager.get_ai_stats(date, limit)
+
+    async def get_ai_stats_alltime(self, limit: int = 10) -> list:
+        """Топ пользователей по ИИ-запросам за всё время (user_id, total_count)"""
+        return await self.manager.get_ai_stats_alltime(limit)
+
+    # Методы для сохраненных толкований
+    async def save_commentary(self, user_id: int, book_id: int, chapter_start: int,
+                              chapter_end: int = None, verse_start: int = None, verse_end: int = None,
+                              reference_text: str = "", commentary_text: str = "",
+                              commentary_type: str = "ai") -> bool:
+        """Сохраняет толкование для пользователя"""
+        return await self.manager.save_commentary(
+            user_id, book_id, chapter_start, chapter_end, verse_start, verse_end,
+            reference_text, commentary_text, commentary_type)
+
+    async def get_saved_commentary(self, user_id: int, book_id: int, chapter_start: int,
+                                   chapter_end: int = None, verse_start: int = None, verse_end: int = None,
+                                   commentary_type: str = "ai") -> Optional[str]:
+        """Получает сохраненное толкование"""
+        return await self.manager.get_saved_commentary(
+            user_id, book_id, chapter_start, chapter_end, verse_start, verse_end, commentary_type)
+
+    async def delete_saved_commentary(self, user_id: int, book_id: int, chapter_start: int,
+                                      chapter_end: int = None, verse_start: int = None, verse_end: int = None,
+                                      commentary_type: str = "ai") -> bool:
+        """Удаляет сохраненное толкование"""
+        return await self.manager.delete_saved_commentary(
+            user_id, book_id, chapter_start, chapter_end, verse_start, verse_end, commentary_type)
+
+    async def get_user_commentaries(self, user_id: int, limit: int = 50) -> list:
+        """Получает последние сохраненные толкования пользователя"""
+        return await self.manager.get_user_commentaries(user_id, limit)
+
+    # Методы для библейских тем
+    async def get_bible_topics(self, search_query: str = "", limit: int = 50) -> list:
+        """Получает список библейских тем с возможностью поиска"""
+        return await self.manager.get_bible_topics(search_query, limit)
+
+    async def get_topic_by_name(self, topic_name: str) -> dict:
+        """Получает тему по точному названию"""
+        return await self.manager.get_topic_by_name(topic_name)
+
+    async def get_topic_by_id(self, topic_id: int) -> dict:
+        """Получает тему по ID"""
+        return await self.manager.get_topic_by_id(topic_id)
+
+    async def search_topics_fulltext(self, search_query: str, limit: int = 20) -> list:
+        """Полнотекстовый поиск по темам"""
+        return await self.manager.search_topics_fulltext(search_query, limit)
+
+    async def get_topics_count(self) -> int:
+        """Получает общее количество тем"""
+        return await self.manager.get_topics_count()
+
+    async def add_bible_topic(self, topic_name: str, verses: str) -> bool:
+        """Добавляет новую библейскую тему"""
+        return await self.manager.add_bible_topic(topic_name, verses)
+
+    async def update_bible_topic(self, topic_id: int, topic_name: str = None, verses: str = None) -> bool:
+        """Обновляет существующую библейскую тему"""
+        return await self.manager.update_bible_topic(topic_id, topic_name, verses)
+
+    async def delete_bible_topic(self, topic_id: int) -> bool:
+        """Удаляет библейскую тему"""
+        return await self.manager.delete_bible_topic(topic_id)
 
 
 # Создаем глобальный экземпляр

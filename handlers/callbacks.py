@@ -122,8 +122,8 @@ async def next_chapter(callback: CallbackQuery, state: FSMContext, db=None):
 
             # Создаем кнопки действий для главы
             from utils.bible_data import create_chapter_action_buttons
-            extra_buttons = create_chapter_action_buttons(
-                book_id, next_chapter_num)
+            extra_buttons = await create_chapter_action_buttons(
+                book_id, next_chapter_num, user_id=callback.from_user.id)
 
             # Навигация по главам
             has_previous = next_chapter_num > 1
@@ -189,8 +189,8 @@ async def prev_chapter(callback: CallbackQuery, state: FSMContext, db=None):
 
             # Создаем кнопки действий для главы
             from utils.bible_data import create_chapter_action_buttons
-            extra_buttons = create_chapter_action_buttons(
-                book_id, prev_chapter_num)
+            extra_buttons = await create_chapter_action_buttons(
+                book_id, prev_chapter_num, user_id=callback.from_user.id)
 
             # Добавляем клавиатуру навигации
             has_previous = prev_chapter_num > 1
@@ -250,7 +250,7 @@ async def daily_selected(callback: CallbackQuery, state: FSMContext):
 
         # Создаем кнопки действий для главы
         from utils.bible_data import create_chapter_action_buttons
-        extra_buttons = create_chapter_action_buttons(book_id, chapter)
+        extra_buttons = await create_chapter_action_buttons(book_id, chapter, user_id=callback.from_user.id)
 
         # Добавляем клавиатуру навигации
         has_previous = chapter > 1
@@ -328,12 +328,12 @@ async def back_to_reading(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-def get_chapter_extras_keyboard(book_id, chapter):
+async def get_chapter_extras_keyboard(book_id, chapter, user_id=None):
     """Возвращает клавиатуру с кнопками Толкования Лопухина и ИИ-объяснения для главы."""
     from aiogram.types import InlineKeyboardMarkup
     from utils.bible_data import create_chapter_action_buttons
 
-    buttons = create_chapter_action_buttons(book_id, chapter)
+    buttons = await create_chapter_action_buttons(book_id, chapter, user_id=user_id)
     if buttons:
         return InlineKeyboardMarkup(inline_keyboard=buttons)
     return None

@@ -25,7 +25,7 @@ def get_main_keyboard() -> ReplyKeyboardMarkup:
             KeyboardButton(text="📝 Мои закладки"),
         ],
         [
-            KeyboardButton(text="📚 Темы"),
+            KeyboardButton(text="🎯 Темы"),
             KeyboardButton(text="❓ Помощь"),
         ]
     ]

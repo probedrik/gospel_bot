@@ -978,6 +978,73 @@ class DatabaseManager:
         logger.info(f"[DB_SQLITE] Асинхронно проверен статус части: {result}")
         return result
 
+    # Методы для сохраненных толкований (заглушки для SQLite)
+    async def save_commentary(self, user_id: int, book_id: int, chapter_start: int,
+                              chapter_end: int = None, verse_start: int = None, verse_end: int = None,
+                              reference_text: str = "", commentary_text: str = "",
+                              commentary_type: str = "ai") -> bool:
+        """Сохраняет толкование для пользователя (не реализовано для SQLite)"""
+        return False
+
+    async def get_saved_commentary(self, user_id: int, book_id: int, chapter_start: int,
+                                   chapter_end: int = None, verse_start: int = None, verse_end: int = None,
+                                   commentary_type: str = "ai") -> Optional[str]:
+        """Получает сохраненное толкование (не реализовано для SQLite)"""
+        return None
+
+    async def delete_saved_commentary(self, user_id: int, book_id: int, chapter_start: int,
+                                      chapter_end: int = None, verse_start: int = None, verse_end: int = None,
+                                      commentary_type: str = "ai") -> bool:
+        """Удаляет сохраненное толкование (не реализовано для SQLite)"""
+        return False
+
+    async def get_user_commentaries(self, user_id: int, limit: int = 50) -> list:
+        """Получает последние сохраненные толкования пользователя (заглушка для SQLite)"""
+        logger.warning("Метод get_user_commentaries не реализован для SQLite")
+        return []
+
+    # Заглушки для методов библейских тем (для совместимости API)
+    async def get_bible_topics(self, search_query: str = "", limit: int = 50) -> list:
+        """Получает список библейских тем (заглушка для SQLite)"""
+        logger.warning("Метод get_bible_topics не реализован для SQLite")
+        return []
+
+    async def get_topic_by_name(self, topic_name: str) -> dict:
+        """Получает тему по названию (заглушка для SQLite)"""
+        logger.warning("Метод get_topic_by_name не реализован для SQLite")
+        return {}
+
+    async def get_topic_by_id(self, topic_id: int) -> dict:
+        """Получает тему по ID (заглушка для SQLite)"""
+        logger.warning("Метод get_topic_by_id не реализован для SQLite")
+        return {}
+
+    async def search_topics_fulltext(self, search_query: str, limit: int = 20) -> list:
+        """Полнотекстовый поиск по темам (заглушка для SQLite)"""
+        logger.warning("Метод search_topics_fulltext не реализован для SQLite")
+        return []
+
+    async def get_topics_count(self) -> int:
+        """Получает количество тем (заглушка для SQLite)"""
+        logger.warning("Метод get_topics_count не реализован для SQLite")
+        return 0
+
+    async def add_bible_topic(self, topic_name: str, verses: str) -> bool:
+        """Добавляет тему (заглушка для SQLite)"""
+        logger.warning("Метод add_bible_topic не реализован для SQLite")
+        return False
+
+    async def update_bible_topic(self, topic_id: int, topic_name: str = None, verses: str = None) -> bool:
+        """Обновляет тему (заглушка для SQLite)"""
+        logger.warning("Метод update_bible_topic не реализован для SQLite")
+        return False
+
+    async def delete_bible_topic(self, topic_id: int) -> bool:
+        """Удаляет тему (заглушка для SQLite)"""
+        logger.warning("Метод delete_bible_topic не реализован для SQLite")
+        return False
+
+
 # Глобальный экземпляр менеджера БД
 
 
