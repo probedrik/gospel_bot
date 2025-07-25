@@ -120,7 +120,8 @@ class PostgreSQLManager:
                     id SERIAL PRIMARY KEY,
                     user_id BIGINT REFERENCES users(user_id) ON DELETE CASCADE,
                     book_id INTEGER NOT NULL,
-                    chapter INTEGER NOT NULL,
+                    chapter_start INTEGER NOT NULL,
+                    chapter_end INTEGER,
                     verse_start INTEGER,
                     verse_end INTEGER,
                     display_text TEXT,
@@ -294,17 +295,17 @@ class PostgreSQLManager:
             ''', user_id, username, first_name, datetime.now())
 
     # Методы для работы с закладками
-    async def add_bookmark(self, user_id: int, book_id: int, chapter: int,
-                           display_text: str, verse_start: int = None,
-                           verse_end: int = None, note: str = None) -> bool:
-        """Добавляет закладку"""
+    async def add_bookmark(self, user_id: int, book_id: int, chapter_start: int,
+                           chapter_end: int = None, display_text: str = None, 
+                           verse_start: int = None, verse_end: int = None, note: str = None) -> bool:
+        """Добавляет закладку с поддержкой диапазонов глав и стихов"""
         try:
             async with self.pool.acquire() as conn:
                 await conn.execute('''
                     INSERT INTO bookmarks 
-                    (user_id, book_id, chapter, verse_start, verse_end, display_text, note)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7)
-                ''', user_id, book_id, chapter, verse_start, verse_end, display_text, note)
+                    (user_id, book_id, chapter_start, chapter_end, verse_start, verse_end, display_text, note)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                ''', user_id, book_id, chapter_start, chapter_end, verse_start, verse_end, display_text, note)
                 return True
         except Exception as e:
             logger.error(f"Ошибка добавления закладки: {e}")
@@ -314,24 +315,45 @@ class PostgreSQLManager:
         """Получает все закладки пользователя"""
         async with self.pool.acquire() as conn:
             rows = await conn.fetch('''
-                SELECT book_id, chapter, display_text, verse_start, verse_end, note, created_at
+                SELECT book_id, chapter_start, chapter_end, display_text, verse_start, verse_end, note, created_at
                 FROM bookmarks 
                 WHERE user_id = $1 
                 ORDER BY created_at DESC
             ''', user_id)
             return [tuple(row) for row in rows]
 
-    async def remove_bookmark(self, user_id: int, book_id: int, chapter: int) -> bool:
+    async def remove_bookmark(self, user_id: int, book_id: int, chapter_start: int,
+                             chapter_end: int = None, verse_start: int = None, verse_end: int = None) -> bool:
         """Удаляет закладку"""
         try:
             async with self.pool.acquire() as conn:
                 result = await conn.execute('''
                     DELETE FROM bookmarks 
-                    WHERE user_id = $1 AND book_id = $2 AND chapter = $3
-                ''', user_id, book_id, chapter)
+                    WHERE user_id = $1 AND book_id = $2 AND chapter_start = $3 
+                    AND chapter_end IS NOT DISTINCT FROM $4 
+                    AND verse_start IS NOT DISTINCT FROM $5 
+                    AND verse_end IS NOT DISTINCT FROM $6
+                ''', user_id, book_id, chapter_start, chapter_end, verse_start, verse_end)
                 return result != 'DELETE 0'
         except Exception as e:
             logger.error(f"Ошибка удаления закладки: {e}")
+            return False
+
+    async def is_bookmarked(self, user_id: int, book_id: int, chapter_start: int,
+                           chapter_end: int = None, verse_start: int = None, verse_end: int = None) -> bool:
+        """Проверяет, есть ли закладка"""
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow('''
+                    SELECT 1 FROM bookmarks 
+                    WHERE user_id = $1 AND book_id = $2 AND chapter_start = $3 
+                    AND chapter_end IS NOT DISTINCT FROM $4 
+                    AND verse_start IS NOT DISTINCT FROM $5 
+                    AND verse_end IS NOT DISTINCT FROM $6
+                ''', user_id, book_id, chapter_start, chapter_end, verse_start, verse_end)
+                return row is not None
+        except Exception as e:
+            logger.error(f"Ошибка проверки закладки: {e}")
             return False
 
     # Методы для работы с планами чтения

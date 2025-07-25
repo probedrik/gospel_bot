@@ -136,7 +136,7 @@ async def help_message(message: Message):
         "• 📖 Быстрый выбор книги и главы\n"
         "• 🔍 Поиск стихов по ссылке (например, <code>Ин 3:16</code>)\n"
         "• 📝 Закладки на любимые главы и быстрый доступ к ним\n"
-        "• 📚 Тематические подборки стихов (кнопка '📚 Темы' в главном меню)\n"
+        "• 🎯 Тематические подборки стихов (кнопка '🎯 Темы' в главном меню)\n"
         "• 💬 Поиск по словам (если включено)\n"
         "• 📊 Случайный стих\n"
         "• 🧑‍🏫 Толкования проф. Лопухина по каждому стиху и главе (постранично, с кнопками)\n"
@@ -555,24 +555,81 @@ if ENABLE_WORD_SEARCH:
             await message.answer(f"Ошибка при поиске: {str(e)}")
 
 
-@router.message(F.text == "📚 Темы")
-async def show_topics_menu(message: Message):
-    from utils.topics import get_topics_list
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-    topics = get_topics_list()
-    # Формируем inline-клавиатуру с кнопками по 2 в ряд
+def create_topics_keyboard(topics: list) -> list:
+    """Создает клавиатуру с темами, используя умную сортировку по длине"""
     buttons = []
+    
+    # Добавляем заметную кнопку ИИ помощника в начало
+    buttons.append([
+        InlineKeyboardButton(
+            text="🤖✨ Подобрать с ИИ помощником ✨",
+            callback_data="ai_assistant"
+        )
+    ])
+    
+    # Формируем inline-клавиатуру с умной сортировкой по длине текста
     row = []
     for i, topic in enumerate(topics):
-        row.append(InlineKeyboardButton(
-            text=topic, callback_data=f"topic_{i}"))
-        if len(row) == 2:
-            buttons.append(row)
-            row = []
+        button = InlineKeyboardButton(text=topic, callback_data=f"topic_{i}")
+        
+        # Если название темы длинное (больше 18 символов), размещаем на отдельной строке
+        if len(topic) > 18:
+            # Если есть незавершенный ряд, добавляем его
+            if row:
+                buttons.append(row)
+                row = []
+            # Добавляем длинную тему отдельной строкой
+            buttons.append([button])
+        else:
+            # Короткие темы добавляем по 2 в ряд
+            row.append(button)
+            if len(row) == 2:
+                buttons.append(row)
+                row = []
+    
+    # Добавляем оставшиеся кнопки
     if row:
         buttons.append(row)
+    
+    # Дублируем кнопку ИИ помощника снизу
+    buttons.append([
+        InlineKeyboardButton(
+            text="🤖✨ Подобрать с ИИ помощником ✨",
+            callback_data="ai_assistant"
+        )
+    ])
+    
+    # Добавляем кнопку возврата в меню
+    buttons.append([
+        InlineKeyboardButton(
+            text="🏠 Вернуться в меню",
+            callback_data="back_to_menu"
+        )
+    ])
+    
+    return buttons
+
+@router.callback_query(F.data == "back_to_topics")
+async def back_to_topics(callback: CallbackQuery):
+    """Возвращает к списку тем"""
+    from utils.topics import get_topics_list_async
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    topics = await get_topics_list_async()
+    
+    buttons = create_topics_keyboard(topics)
     kb = InlineKeyboardMarkup(inline_keyboard=buttons)
-    await message.answer("Выберите тему:", reply_markup=kb)
+    await callback.message.edit_text("Выберите тему или воспользуйтесь ИИ помощником:", reply_markup=kb)
+    await callback.answer()
+
+@router.message(F.text == "🎯 Темы")
+async def show_topics_menu(message: Message):
+    from utils.topics import get_topics_list_async
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    topics = await get_topics_list_async()
+    
+    buttons = create_topics_keyboard(topics)
+    kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+    await message.answer("Выберите тему или воспользуйтесь ИИ помощником:", reply_markup=kb)
 
 
 @router.callback_query(F.data.regexp(r'^topic_(\d+)$'))
@@ -591,10 +648,11 @@ async def show_topic_verses(callback: CallbackQuery, state: FSMContext):
             except Exception:
                 pass
     # Показываем новый список стихов
-    topics = get_topics_list()
+    from utils.topics import get_topics_list_async, get_verses_for_topic_async
+    topics = await get_topics_list_async()
     idx = int(callback.data.split('_')[1])
     topic = topics[idx]
-    verses = get_verses_for_topic(topic)
+    verses = await get_verses_for_topic_async(topic)
     # Формируем inline-клавиатуру с кнопками по 2 в ряд
     buttons = []
     row = []
@@ -646,11 +704,12 @@ async def topic_verse_callback(callback: CallbackQuery, state: FSMContext):
             pass
     # Добавить только inline-кнопки под стихом
     import re
-    match = re.match(r"([А-Яа-яёЁ0-9\s]+)\s(\d+)(?::(\d+)(-\d+)?)?", verse_ref)
+    match = re.match(r"([А-Яа-яёЁ0-9\s]+)\s(\d+)(?::(\d+)(?:-(\d+))?)?", verse_ref)
     if match:
         book_raw = match.group(1).strip().lower()
         chapter = int(match.group(2))
-        verse = match.group(3)
+        verse_start = match.group(3)
+        verse_end = match.group(4) if match.group(4) else verse_start
         book_abbr = bible_data.normalize_book_name(book_raw)
         book_id = bible_data.get_book_id(book_abbr)
         en_book = None
@@ -671,22 +730,24 @@ async def topic_verse_callback(callback: CallbackQuery, state: FSMContext):
                 break
 
         buttons = []
+        action_row = []
+        
         # Кнопка "Открыть всю главу"
         if book_id:
-            buttons.append([
+            action_row.append(
                 InlineKeyboardButton(
-                    text="Открыть всю главу",
+                    text="📖 Открыть всю главу",
                     callback_data=f"open_chapter_{book_abbr}_{chapter}"
                 )
-            ])
+            )
 
         # Кнопка толкования Лопухина (проверяем глобальную настройку)
         from config.settings import ENABLE_LOPUKHIN_COMMENTARY
         if ENABLE_LOPUKHIN_COMMENTARY and en_book:
             commentary = None
-            if verse:
+            if verse_start:
                 commentary = lopukhin_commentary.get_commentary(
-                    en_book, chapter, int(verse))
+                    en_book, chapter, int(verse_start))
             if not commentary:
                 commentary = lopukhin_commentary.get_commentary(
                     en_book, chapter, 0)
@@ -696,9 +757,10 @@ async def topic_verse_callback(callback: CallbackQuery, state: FSMContext):
                 if book_id:
                     try:
                         from database.universal_manager import universal_db_manager
-                        verse_start = int(verse) if verse else 0
+                        verse_start_num = int(verse_start) if verse_start else 0
+                        verse_end_num = int(verse_end) if verse_end else verse_start_num
                         saved_lopukhin_commentary = await universal_db_manager.get_saved_commentary(
-                            callback.from_user.id, book_id, chapter, chapter, verse_start, verse_start, "lopukhin"
+                            callback.from_user.id, book_id, chapter, chapter, verse_start_num, verse_end_num, "lopukhin"
                         )
                     except:
                         pass
@@ -706,16 +768,21 @@ async def topic_verse_callback(callback: CallbackQuery, state: FSMContext):
                 # Определяем текст кнопки
                 lopukhin_text = "📚 Обновить толкование Лопухина" if saved_lopukhin_commentary else "Толкование проф. Лопухина"
 
-                if not verse or verse == '0' or verse == 0:
-                    cb_data = f"open_commentary_{en_book}_{chapter}_0"
+                # Формируем callback для диапазона стихов
+                if verse_start and verse_end and verse_start != verse_end:
+                    verse_callback = f"{verse_start}-{verse_end}"
+                elif verse_start:
+                    verse_callback = verse_start
                 else:
-                    cb_data = f"open_commentary_{en_book}_{chapter}_{verse}"
-                buttons.append([
+                    verse_callback = "0"
+                    
+                cb_data = f"open_commentary_{en_book}_{chapter}_{verse_callback}"
+                action_row.append(
                     InlineKeyboardButton(
                         text=lopukhin_text,
                         callback_data=cb_data
                     )
-                ])
+                )
 
         # Кнопка ИИ-разбора - используем умную функцию для правильного текста
         if ENABLE_GPT_EXPLAIN and book_id:
@@ -723,9 +790,10 @@ async def topic_verse_callback(callback: CallbackQuery, state: FSMContext):
             saved_commentary = None
             try:
                 from database.universal_manager import universal_db_manager
-                verse_start = int(verse) if verse else 0
+                verse_start_num = int(verse_start) if verse_start else 0
+                verse_end_num = int(verse_end) if verse_end else verse_start_num
                 saved_commentary = await universal_db_manager.get_saved_commentary(
-                    callback.from_user.id, book_id, chapter, chapter, verse_start, verse_start, "ai"
+                    callback.from_user.id, book_id, chapter, chapter, verse_start_num, verse_end_num, "ai"
                 )
             except:
                 pass
@@ -733,16 +801,33 @@ async def topic_verse_callback(callback: CallbackQuery, state: FSMContext):
             # Определяем текст кнопки
             ai_text = "🔄 Обновить толкование ИИ" if saved_commentary else "🤖 Разбор от ИИ"
 
-            if verse is not None:
-                cb_data = f"gpt_explain_{en_book}_{chapter}_{verse}"
+            # Формируем callback для диапазона стихов
+            if verse_start and verse_end and verse_start != verse_end:
+                verse_callback = f"{verse_start}-{verse_end}"
+            elif verse_start:
+                verse_callback = verse_start
             else:
-                cb_data = f"gpt_explain_{en_book}_{chapter}_0"
-            buttons.append([
+                verse_callback = "0"
+                
+            cb_data = f"gpt_explain_{en_book}_{chapter}_{verse_callback}"
+            action_row.append(
                 InlineKeyboardButton(
                     text=ai_text,
                     callback_data=cb_data
                 )
-            ])
+            )
+
+        # Добавляем ряд кнопок действий (если есть)
+        if action_row:
+            buttons.append(action_row)
+        
+        # Добавляем кнопку "Назад к темам" для готовых тем
+        buttons.append([
+            InlineKeyboardButton(
+                text="⬅️ Назад к темам",
+                callback_data="back_to_topics"
+            )
+        ])
 
         # Применяем кнопки к сообщению
         if buttons and sent:
@@ -1066,7 +1151,7 @@ async def show_commentary_page(callback, book, chapter, all_comments, idx, state
             )
 
 
-@router.callback_query(F.data.regexp(r'^gpt_explain_([A-Za-z0-9]+)_(\d+)_(\d+)$'))
+@router.callback_query(F.data.regexp(r'^gpt_explain_([A-Za-z0-9]+)_(\d+)_(.+)$'))
 async def gpt_explain_callback(callback: CallbackQuery, state: FSMContext = None):
     import re
     # Сразу отвечаем на callback чтобы избежать timeout
@@ -1104,20 +1189,48 @@ async def gpt_explain_callback(callback: CallbackQuery, state: FSMContext = None
         await callback.message.answer("Вы исчерпали лимит ИИ-запросов на сегодня.")
         return
     match = re.match(
-        r'^gpt_explain_([A-Za-z0-9]+)_(\d+)_(\d+)$', callback.data)
+        r'^gpt_explain_([A-Za-z0-9]+)_(\d+)_(.+)$', callback.data)
     if not match:
         await callback.answer("Ошибка запроса к ИИ")
         return
     book = match.group(1)
     chapter = int(match.group(2))
-    verse = int(match.group(3))
+    verse_part = match.group(3)
+    
+    # Парсим часть со стихом (может быть "0", "5", "5-10")
+    if verse_part == "0":
+        verse = 0
+        verse_end = None
+    elif "-" in verse_part:
+        verse_parts = verse_part.split("-")
+        if len(verse_parts) >= 2 and verse_parts[0].strip() and verse_parts[1].strip():
+            verse = int(verse_parts[0].strip())
+            verse_end = int(verse_parts[1].strip())
+        else:
+            # Если не удалось распарсить диапазон, используем как одиночный стих
+            try:
+                verse = int(verse_part.replace("-", ""))
+                verse_end = None
+            except ValueError:
+                verse = 0
+                verse_end = None
+    else:
+        verse = int(verse_part)
+        verse_end = None
     # Получаем текст главы или стиха
     text = ""
     # Формируем ссылку для get_verse_by_reference с русским сокращением
     from utils.bible_data import bible_data
     ru_book = bible_data.book_synonyms.get(book.lower(), book)
     book_id = bible_data.get_book_id(ru_book)
-    reference = f"{ru_book} {chapter}:{verse}" if verse != 0 else f"{ru_book} {chapter}"
+    
+    # Формируем ссылку в зависимости от типа запроса
+    if verse == 0:
+        reference = f"{ru_book} {chapter}"
+    elif verse_end is not None:
+        reference = f"{ru_book} {chapter}:{verse}-{verse_end}"
+    else:
+        reference = f"{ru_book} {chapter}:{verse}"
 
     # Обновляем состояние для корректной навигации
     if book_id and state:
@@ -1135,9 +1248,17 @@ async def gpt_explain_callback(callback: CallbackQuery, state: FSMContext = None
     else:
         from handlers.verse_reference import get_verse_by_reference
         st = state if state is not None else None
+        
+        # Отладочная информация для диагностики проблемы
+        logger.info(f"DEBUG: Обработка ссылки '{reference}' для пользователя {user_id}")
+        logger.info(f"DEBUG: book='{book}', ru_book='{ru_book}', book_id={book_id}")
+        logger.info(f"DEBUG: chapter={chapter}, verse={verse}, verse_end={verse_end}")
+        
         try:
             text, _ = await get_verse_by_reference(st, reference)
-        except Exception:
+            logger.info(f"DEBUG: get_verse_by_reference успешно вернул текст длиной {len(text) if text else 0} символов")
+        except Exception as e:
+            logger.error(f"DEBUG: Ошибка в get_verse_by_reference: {e}")
             text, _ = await get_verse_by_reference(None, reference)
     # Проверка на ошибку формата
     if text.startswith("Неверный формат ссылки") or text.startswith("Книга '"):
@@ -1153,9 +1274,10 @@ async def gpt_explain_callback(callback: CallbackQuery, state: FSMContext = None
 
         # Проверяем, есть ли уже сохраненное толкование
         from database.universal_manager import universal_db_manager as db_manager
-        verse_start = verse if verse != 0 else None
+        verse_start_num = verse if verse != 0 else None
+        verse_end_num = verse_end if verse_end is not None else verse_start_num
         saved_commentary = await db_manager.get_saved_commentary(
-            user_id, book_id, chapter, None, verse_start, verse_start, "ai")
+            user_id, book_id, chapter, None, verse_start_num, verse_end_num, "ai")
 
         # Разбиваем на части и отправляем
         text_parts = list(split_text(formatted))
@@ -1173,10 +1295,10 @@ async def gpt_explain_callback(callback: CallbackQuery, state: FSMContext = None
                 chapter_start = chapter
                 chapter_end_str = "0"  # Всегда одна глава
                 verse_start_str = str(
-                    verse_start) if verse_start is not None else "0"
-                # Для одного стиха verse_end = verse_start
+                    verse_start_num) if verse_start_num is not None else "0"
+                # Для диапазона стихов используем verse_end_num
                 verse_end_str = str(
-                    verse_start) if verse_start is not None else "0"
+                    verse_end_num) if verse_end_num is not None else "0"
 
                 if saved_commentary:
                     save_buttons = [
@@ -1233,6 +1355,27 @@ async def gpt_explain_callback(callback: CallbackQuery, state: FSMContext = None
                         # Если не найдено сокращение, только action_buttons + save_buttons
                         all_buttons = action_buttons + save_buttons
 
+                    # Добавляем кнопку возврата в зависимости от контекста
+                    if state:
+                        data = await state.get_data()
+                        # Проверяем, есть ли данные от ИИ помощника
+                        if data.get('verse_references') and data.get('problem_text'):
+                            # Пользователь пришел от ИИ помощника
+                            all_buttons.append([
+                                InlineKeyboardButton(
+                                    text="⬅️ Вернуться к отрывкам",
+                                    callback_data="back_to_ai_verses"
+                                )
+                            ])
+                        else:
+                            # Пользователь пришел из готовых тем
+                            all_buttons.append([
+                                InlineKeyboardButton(
+                                    text="⬅️ Назад к темам",
+                                    callback_data="back_to_topics"
+                                )
+                            ])
+
                     if all_buttons:
                         keyboard = InlineKeyboardMarkup(
                             inline_keyboard=all_buttons)
@@ -1274,8 +1417,8 @@ async def gpt_explain_callback(callback: CallbackQuery, state: FSMContext = None
                         last_ai_chapter=chapter,  # Для совместимости, в save_callback это будет chapter_start
                         last_ai_chapter_end=None,  # Всегда одна глава для тем
                         last_ai_verse=verse,
-                        # Для стихов = verse, для глав = None
-                        last_ai_verse_end=verse if verse != 0 else None,
+                        # Для диапазонов стихов используем verse_end_num
+                        last_ai_verse_end=verse_end_num if verse_end_num is not None else (verse if verse != 0 else None),
                         last_topic_ai_msg_id=msg.message_id
                     )
             else:

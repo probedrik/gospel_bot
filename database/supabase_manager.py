@@ -120,15 +120,16 @@ class SupabaseManager:
                 f"Ошибка получения закладок для пользователя {user_id}: {e}")
             return []
 
-    async def add_bookmark(self, user_id: int, book_id: int, chapter: int,
-                           display_text: str, verse_start: int = None,
-                           verse_end: int = None, note: str = None) -> bool:
+    async def add_bookmark(self, user_id: int, book_id: int, chapter_start: int,
+                           chapter_end: int = None, display_text: str = None, 
+                           verse_start: int = None, verse_end: int = None, note: str = None) -> bool:
         """Добавляет закладку"""
         try:
             data = {
                 'user_id': user_id,
                 'book_id': book_id,
-                'chapter': chapter,
+                'chapter_start': chapter_start,
+                'chapter_end': chapter_end,
                 'verse_start': verse_start,
                 'verse_end': verse_end,
                 'display_text': display_text,
@@ -143,22 +144,56 @@ class SupabaseManager:
                 f"Ошибка добавления закладки для пользователя {user_id}: {e}")
             return False
 
-    async def remove_bookmark(self, user_id: int, book_id: int, chapter: int) -> bool:
+    async def remove_bookmark(self, user_id: int, book_id: int, chapter_start: int,
+                             chapter_end: int = None, verse_start: int = None, verse_end: int = None) -> bool:
         """Удаляет закладку"""
         try:
-            result = self.client.table('bookmarks').delete().eq('user_id', user_id).eq(
-                'book_id', book_id).eq('chapter', chapter).execute()
+            query = self.client.table('bookmarks').delete().eq('user_id', user_id).eq('book_id', book_id).eq('chapter_start', chapter_start)
+            
+            if chapter_end is not None:
+                query = query.eq('chapter_end', chapter_end)
+            else:
+                query = query.is_('chapter_end', 'null')
+                
+            if verse_start is not None:
+                query = query.eq('verse_start', verse_start)
+            else:
+                query = query.is_('verse_start', 'null')
+                
+            if verse_end is not None:
+                query = query.eq('verse_end', verse_end)
+            else:
+                query = query.is_('verse_end', 'null')
+            
+            result = query.execute()
             return len(result.data) > 0
         except Exception as e:
             logger.error(
                 f"Ошибка удаления закладки для пользователя {user_id}: {e}")
             return False
 
-    async def is_bookmarked(self, user_id: int, book_id: int, chapter: int) -> bool:
+    async def is_bookmarked(self, user_id: int, book_id: int, chapter_start: int,
+                           chapter_end: int = None, verse_start: int = None, verse_end: int = None) -> bool:
         """Проверяет, есть ли закладка"""
         try:
-            result = self.client.table('bookmarks').select('id').eq(
-                'user_id', user_id).eq('book_id', book_id).eq('chapter', chapter).execute()
+            query = self.client.table('bookmarks').select('id').eq('user_id', user_id).eq('book_id', book_id).eq('chapter_start', chapter_start)
+            
+            if chapter_end is not None:
+                query = query.eq('chapter_end', chapter_end)
+            else:
+                query = query.is_('chapter_end', 'null')
+                
+            if verse_start is not None:
+                query = query.eq('verse_start', verse_start)
+            else:
+                query = query.is_('verse_start', 'null')
+                
+            if verse_end is not None:
+                query = query.eq('verse_end', verse_end)
+            else:
+                query = query.is_('verse_end', 'null')
+            
+            result = query.execute()
             return len(result.data) > 0
         except Exception as e:
             logger.error(

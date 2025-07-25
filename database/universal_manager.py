@@ -83,28 +83,36 @@ class UniversalDatabaseManager:
         """Получает закладки пользователя"""
         return await self.manager.get_bookmarks(user_id)
 
-    async def add_bookmark(self, user_id: int, book_id: int, chapter: int, display_text: str):
-        """Добавляет закладку"""
+    async def add_bookmark(self, user_id: int, book_id: int, chapter_start: int, 
+                          display_text: str, chapter_end: int = None, 
+                          verse_start: int = None, verse_end: int = None, note: str = None):
+        """Добавляет закладку с поддержкой диапазонов глав и стихов"""
         if self.is_postgres or self.is_supabase:
             return await self.manager.add_bookmark(
                 user_id=user_id,
                 book_id=book_id,
-                chapter=chapter,
+                chapter_start=chapter_start,
+                chapter_end=chapter_end,
                 display_text=display_text,
-                verse_start=None,
-                verse_end=None,
-                note=None
+                verse_start=verse_start,
+                verse_end=verse_end,
+                note=note
             )
         else:
-            return await self.manager.add_bookmark(user_id, book_id, chapter, display_text)
+            return await self.manager.add_bookmark(
+                user_id, book_id, chapter_start, chapter_end, 
+                verse_start, verse_end, display_text, note
+            )
 
-    async def remove_bookmark(self, user_id: int, book_id: int, chapter: int):
+    async def remove_bookmark(self, user_id: int, book_id: int, chapter_start: int, 
+                             chapter_end: int = None, verse_start: int = None, verse_end: int = None):
         """Удаляет закладку"""
-        return await self.manager.remove_bookmark(user_id, book_id, chapter)
+        return await self.manager.remove_bookmark(user_id, book_id, chapter_start, chapter_end, verse_start, verse_end)
 
-    async def is_bookmarked(self, user_id: int, book_id: int, chapter: int):
+    async def is_bookmarked(self, user_id: int, book_id: int, chapter_start: int, 
+                           chapter_end: int = None, verse_start: int = None, verse_end: int = None):
         """Проверяет, есть ли закладка"""
-        return await self.manager.is_bookmarked(user_id, book_id, chapter)
+        return await self.manager.is_bookmarked(user_id, book_id, chapter_start, chapter_end, verse_start, verse_end)
 
     # Методы для работы с лимитами ИИ
     async def increment_ai_usage(self, user_id: int):

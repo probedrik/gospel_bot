@@ -474,5 +474,56 @@ async def ask_gpt_explain(text: str) -> str:
                 return "Извините, не удалось получить объяснение от ИИ. Попробуйте позже."
 
 
+async def ask_gpt_bible_verses(problem_text: str) -> str:
+    """
+    Отправляет запрос к OpenRouter для подбора библейских стихов по проблеме пользователя.
+    """
+    cache_key = f"verses_{problem_text.strip().lower()}"
+    if cache_key in _gpt_explain_cache:
+        return _gpt_explain_cache[cache_key]
+
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    system_prompt = (
+        "Вы — православный богослов и библейский консультант. "
+        "Ваша задача — подобрать 3-5 наиболее подходящих библейских отрывков, "
+        "которые помогают в переживании и преодолении описанной проблемы или ситуации. "
+        "Отвечайте ТОЛЬКО списком ссылок на стихи в формате 'Книга глава:стих-стих', "
+        "разделенных точкой с запятой. "
+        "Используйте русские сокращения книг: Быт, Исх, Лев, Чис, Втор, Нав, Суд, Руф, "
+        "1Цар, 2Цар, 3Цар, 4Цар, 1Пар, 2Пар, Езд, Неем, Есф, Иов, Пс, Прит, Еккл, Песн, "
+        "Ис, Иер, Плач, Иез, Дан, Ос, Иоил, Ам, Авд, Ион, Мих, Наум, Авв, Соф, Агг, Зах, Мал, "
+        "Мф, Мк, Лк, Ин, Деян, Рим, 1Кор, 2Кор, Гал, Еф, Флп, Кол, 1Фес, 2Фес, 1Тим, 2Тим, "
+        "Тит, Флм, Евр, Иак, 1Пет, 2Пет, 1Ин, 2Ин, 3Ин, Иуд, Откр. "
+        "Пример ответа: 'Мф 6:25-34; Флп 4:6-7; 1Пет 5:7; Пс 22:1-6; Ис 41:10'"
+    )
+    
+    payload = {
+        "model": OPENROUTER_MODEL,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"Проблема: {problem_text}"}
+        ],
+        "max_tokens": 200,
+        "temperature": 0.3
+    }
+    
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, headers=headers, json=payload) as resp:
+            data = await resp.json()
+            if 'LOG_OPENROUTER_RESPONSE' in globals() and LOG_OPENROUTER_RESPONSE:
+                logger.error(f"OpenRouter API raw response: {data}")
+            try:
+                result = data["choices"][0]["message"]["content"].strip()
+                _gpt_explain_cache[cache_key] = result
+                return result
+            except Exception:
+                return "Извините, не удалось получить рекомендации от ИИ. Попробуйте позже."
+
+
 # Создаем глобальный экземпляр клиента для использования в других модулях
 bible_api = BibleAPIClient()

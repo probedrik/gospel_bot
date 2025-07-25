@@ -79,8 +79,12 @@ class DatabaseManager:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER,
                 book_id INTEGER,
-                chapter INTEGER,
+                chapter_start INTEGER NOT NULL,
+                chapter_end INTEGER,
+                verse_start INTEGER,
+                verse_end INTEGER,
                 display_text TEXT,
+                note TEXT,
                 created_at TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users (user_id)
             )
@@ -296,7 +300,9 @@ class DatabaseManager:
 
         return await asyncio.to_thread(_execute)
 
-    async def add_bookmark(self, user_id: int, book_id: int, chapter: int, display_text: str) -> bool:
+    async def add_bookmark(self, user_id: int, book_id: int, chapter_start: int, 
+                          chapter_end: int = None, verse_start: int = None, 
+                          verse_end: int = None, display_text: str = None, note: str = None) -> bool:
         """
         Добавляет закладку для пользователя.
 
@@ -362,8 +368,8 @@ class DatabaseManager:
             logger.info(
                 f"Проверка существующей закладки: {user_id}, {book_id}, {chapter}")
             cursor.execute(
-                "SELECT 1 FROM bookmarks WHERE user_id = ? AND book_id = ? AND chapter = ?",
-                (user_id, book_id, chapter)
+                "SELECT 1 FROM bookmarks WHERE user_id = ? AND book_id = ? AND chapter_start = ? AND chapter_end IS ? AND verse_start IS ? AND verse_end IS ?",
+                (user_id, book_id, chapter_start, chapter_end, verse_start, verse_end)
             )
             if cursor.fetchone():
                 logger.info(
@@ -375,11 +381,11 @@ class DatabaseManager:
                 logger.info(
                     f"Добавление новой закладки: {user_id} - {display_text}")
                 try:
-                    query = "INSERT INTO bookmarks (user_id, book_id, chapter, display_text, created_at) VALUES (?, ?, ?, ?, ?)"
+                    query = "INSERT INTO bookmarks (user_id, book_id, chapter_start, chapter_end, verse_start, verse_end, display_text, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
                     logger.info(
-                        f"SQL запрос: {query} с параметрами ({user_id}, {book_id}, {chapter}, '{display_text}', {now})")
+                        f"SQL запрос: {query} с параметрами ({user_id}, {book_id}, {chapter_start}, {chapter_end}, {verse_start}, {verse_end}, '{display_text}', '{note}', {now})")
                     cursor.execute(
-                        query, (user_id, book_id, chapter, display_text, now))
+                        query, (user_id, book_id, chapter_start, chapter_end, verse_start, verse_end, display_text, note, now))
 
                     # Обязательно делаем commit для сохранения изменений
                     conn.commit()
@@ -388,8 +394,8 @@ class DatabaseManager:
 
                     # Проверяем, была ли закладка действительно добавлена
                     cursor.execute(
-                        "SELECT * FROM bookmarks WHERE user_id = ? AND book_id = ? AND chapter = ?",
-                        (user_id, book_id, chapter)
+                        "SELECT * FROM bookmarks WHERE user_id = ? AND book_id = ? AND chapter_start = ? AND chapter_end IS ? AND verse_start IS ? AND verse_end IS ?",
+                        (user_id, book_id, chapter_start, chapter_end, verse_start, verse_end)
                     )
                     result = cursor.fetchone()
                     if result:
@@ -473,7 +479,7 @@ class DatabaseManager:
                     f"Выполняем SQL запрос на получение закладок для user_id={user_id}")
                 cursor.execute(
                     """
-                    SELECT book_id, chapter, display_text FROM bookmarks
+                    SELECT book_id, chapter_start, chapter_end, display_text, verse_start, verse_end, note, created_at FROM bookmarks
                     WHERE user_id = ? ORDER BY created_at DESC
                     """,
                     (user_id,)
@@ -520,28 +526,74 @@ class DatabaseManager:
                 f"Ошибка при получении закладок для пользователя {user_id}: {e}", exc_info=True)
             return []
 
-    async def remove_bookmark(self, user_id: int, book_id: int, chapter: int) -> None:
+    async def remove_bookmark(self, user_id: int, book_id: int, chapter_start: int, 
+                             chapter_end: int = None, verse_start: int = None, verse_end: int = None) -> bool:
         """
         Удаляет конкретную закладку пользователя.
 
         Args:
             user_id: ID пользователя Telegram
             book_id: ID книги Библии
-            chapter: Номер главы
+            chapter_start: Начальная глава
+            chapter_end: Конечная глава
+            verse_start: Начальный стих
+            verse_end: Конечный стих
+        
+        Returns:
+            bool: True если закладка удалена, False если ошибка
         """
         def _execute():
-            conn = sqlite3.connect(self.db_file)
-            cursor = conn.cursor()
-            cursor.execute(
-                "DELETE FROM bookmarks WHERE user_id = ? AND book_id = ? AND chapter = ?",
-                (user_id, book_id, chapter)
-            )
-            conn.commit()
-            conn.close()
+            try:
+                conn = sqlite3.connect(self.db_file)
+                cursor = conn.cursor()
+                cursor.execute(
+                    "DELETE FROM bookmarks WHERE user_id = ? AND book_id = ? AND chapter_start = ? AND chapter_end IS ? AND verse_start IS ? AND verse_end IS ?",
+                    (user_id, book_id, chapter_start, chapter_end, verse_start, verse_end)
+                )
+                conn.commit()
+                conn.close()
+                return True
+            except Exception as e:
+                logger.error(f"Ошибка при удалении закладки: {e}")
+                return False
 
-        await asyncio.to_thread(_execute)
-        logger.debug(
-            f"Удалена закладка для пользователя {user_id}: {book_id} {chapter}")
+        result = await asyncio.to_thread(_execute)
+        if result:
+            logger.debug(f"Удалена закладка для пользователя {user_id}: {book_id} {chapter_start}")
+        return result
+
+    async def is_bookmarked(self, user_id: int, book_id: int, chapter_start: int,
+                           chapter_end: int = None, verse_start: int = None, verse_end: int = None) -> bool:
+        """
+        Проверяет, есть ли закладка у пользователя.
+
+        Args:
+            user_id: ID пользователя Telegram
+            book_id: ID книги Библии
+            chapter_start: Начальная глава
+            chapter_end: Конечная глава
+            verse_start: Начальный стих
+            verse_end: Конечный стих
+        
+        Returns:
+            bool: True если закладка существует, False если нет
+        """
+        def _execute():
+            try:
+                conn = sqlite3.connect(self.db_file)
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT 1 FROM bookmarks WHERE user_id = ? AND book_id = ? AND chapter_start = ? AND chapter_end IS ? AND verse_start IS ? AND verse_end IS ?",
+                    (user_id, book_id, chapter_start, chapter_end, verse_start, verse_end)
+                )
+                result = cursor.fetchone()
+                conn.close()
+                return result is not None
+            except Exception as e:
+                logger.error(f"Ошибка при проверке закладки: {e}")
+                return False
+
+        return await asyncio.to_thread(_execute)
 
     async def clear_bookmarks(self, user_id: int) -> None:
         """
@@ -743,8 +795,12 @@ class DatabaseManager:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER,
                 book_id INTEGER,
-                chapter INTEGER,
+                chapter_start INTEGER NOT NULL,
+                chapter_end INTEGER,
+                verse_start INTEGER,
+                verse_end INTEGER,
                 display_text TEXT,
+                note TEXT,
                 created_at TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users (user_id)
             )''')

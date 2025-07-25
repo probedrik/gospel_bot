@@ -49,8 +49,8 @@ def create_book_keyboard(page: int = 0) -> InlineKeyboardMarkup:
     Args:
         page: номер страницы (начиная с 0)
     """
-    # Количество книг на одной странице
-    books_per_page = 10
+    # Количество книг на одной странице (увеличиваем для трех столбцов)
+    books_per_page = 15  # 5 рядов по 3 книги
 
     # Получаем список книг для текущей страницы
     book_ids = bible_data.book_values
@@ -63,16 +63,26 @@ def create_book_keyboard(page: int = 0) -> InlineKeyboardMarkup:
 
     buttons = []
 
-    # Добавляем кнопки для книг
+    # Добавляем кнопки для книг по 3 в ряд
+    row = []
     for i in range(start_idx, end_idx):
         book_id = book_ids[i]
         book_name = book_names[i]
-        buttons.append([
+        row.append(
             InlineKeyboardButton(
                 text=book_name,
                 callback_data=f"select_book_{book_id}"
             )
-        ])
+        )
+
+        # Если набрали 3 кнопки в ряд, добавляем ряд и начинаем новый
+        if len(row) == 3:
+            buttons.append(row)
+            row = []
+
+    # Добавляем оставшиеся кнопки, если есть
+    if row:
+        buttons.append(row)
 
     # Добавляем навигационные кнопки
     nav_buttons = []

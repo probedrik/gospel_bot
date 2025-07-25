@@ -91,12 +91,18 @@ def load_topics() -> List[Dict]:
         return _topics_cache
 
     try:
-        # Пытаемся загрузить из Supabase
-        loop = asyncio.get_event_loop()
-        topics = loop.run_until_complete(load_topics_from_supabase())
-    except RuntimeError:
-        # Если нет активного event loop, создаем новый
-        topics = asyncio.run(load_topics_from_supabase())
+        # Проверяем, есть ли активный event loop
+        try:
+            loop = asyncio.get_running_loop()
+            # Если event loop уже запущен, используем create_task
+            import asyncio
+            task = asyncio.create_task(load_topics_from_supabase())
+            # Но поскольку мы в синхронной функции, используем fallback к CSV
+            logger.warning("Event loop уже запущен, используем fallback к CSV")
+            topics = load_topics_from_csv()
+        except RuntimeError:
+            # Нет активного event loop, можем создать новый
+            topics = asyncio.run(load_topics_from_supabase())
     except Exception as e:
         logger.error(f"Ошибка при загрузке тем: {e}")
         # Последний fallback к CSV
@@ -109,11 +115,28 @@ def load_topics() -> List[Dict]:
     return topics
 
 
+async def get_topics_list_async() -> List[str]:
+    """Возвращает список названий тем (асинхронная версия)"""
+    topics = await load_topics_from_supabase()
+    if not topics:
+        topics = load_topics_from_csv()
+    return [t["topic"] for t in topics]
+
 def get_topics_list() -> List[str]:
     """Возвращает список названий тем"""
     topics = load_topics()
     return [t["topic"] for t in topics]
 
+
+async def get_verses_for_topic_async(topic_name: str) -> List[str]:
+    """Возвращает список стихов для указанной темы (асинхронная версия)"""
+    topics = await load_topics_from_supabase()
+    if not topics:
+        topics = load_topics_from_csv()
+    for topic_data in topics:
+        if topic_data["topic"] == topic_name:
+            return topic_data["verses"]
+    return []
 
 def get_verses_for_topic(topic_name: str) -> List[str]:
     """Возвращает список стихов для указанной темы"""

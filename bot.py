@@ -15,7 +15,7 @@ from aiogram.fsm.context import FSMContext
 
 from config import settings
 from handlers import (
-    commands, text_messages, callbacks, bookmarks, bookmark_callbacks, reading_plans, admin
+    commands, text_messages, callbacks, bookmarks, bookmark_callbacks, reading_plans, admin, ai_assistant
 )
 from middleware.state import StateMiddleware
 from middleware.db_middleware import DatabaseMiddleware
@@ -137,6 +137,12 @@ async def main() -> None:
     dp.include_router(bookmarks.router)
     dp.include_router(bookmark_callbacks.router)
     dp.include_router(reading_plans.router)
+    dp.include_router(ai_assistant.router)  # ИИ помощник
+    
+    # Новые обработчики закладок
+    from handlers import bookmarks_new, bookmark_handlers
+    dp.include_router(bookmarks_new.router)
+    dp.include_router(bookmark_handlers.router)
 
     # Запускаем бота
     try:
