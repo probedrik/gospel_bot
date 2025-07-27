@@ -128,6 +128,7 @@ class SupabaseManager:
             data = {
                 'user_id': user_id,
                 'book_id': book_id,
+                'chapter': chapter_start,  # Для совместимости со старым полем
                 'chapter_start': chapter_start,
                 'chapter_end': chapter_end,
                 'verse_start': verse_start,
@@ -640,11 +641,21 @@ class SupabaseManager:
             logger.error(f"Ошибка удаления толкования: {e}")
             return False
 
+    async def delete_commentary_by_id(self, user_id: int, commentary_id: int) -> bool:
+        """Удаляет сохраненное толкование по ID"""
+        try:
+            self.client.table('saved_commentaries').delete().eq(
+                'user_id', user_id).eq('id', commentary_id).execute()
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка удаления толкования по ID: {e}")
+            return False
+
     async def get_user_commentaries(self, user_id: int, limit: int = 50) -> list:
         """Получает последние сохраненные толкования пользователя"""
         try:
             result = self.client.table('saved_commentaries').select(
-                'reference_text, commentary_text, commentary_type, created_at'
+                'id, book_id, chapter_start, chapter_end, verse_start, verse_end, reference_text, commentary_text, commentary_type, created_at'
             ).eq('user_id', user_id).order(
                 'created_at', desc=True
             ).limit(limit).execute()

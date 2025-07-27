@@ -18,15 +18,14 @@ def get_main_keyboard() -> ReplyKeyboardMarkup:
     buttons = [
         [
             KeyboardButton(text="📖 Выбрать книгу"),
-            KeyboardButton(text="🔍 Найти стих"),
-        ],
-        [
             KeyboardButton(text="📚 План чтения"),
-            KeyboardButton(text="📝 Мои закладки"),
         ],
         [
+            KeyboardButton(text="📝 Мои закладки"),
             KeyboardButton(text="🎯 Темы"),
-            KeyboardButton(text="❓ Помощь"),
+        ],
+        [
+            KeyboardButton(text="⚙️ Настройки"),
         ]
     ]
 
@@ -158,15 +157,7 @@ def create_navigation_keyboard(has_previous: bool = False, has_next: bool = True
         else:
             buttons.append(navigation_buttons)
 
-    # Кнопка для добавления/удаления закладок
-    bookmark_data = "bookmark_info" if is_bookmarked else "add_bookmark"
-    bookmark_text = "🗑️ Удалить закладку" if is_bookmarked else "📌 Добавить закладку"
 
-    logger.info(f"Добавлена кнопка '{bookmark_text}' в клавиатуру навигации")
-
-    buttons.append([
-        InlineKeyboardButton(text=bookmark_text, callback_data=bookmark_data)
-    ])
 
     # Возврат в меню
     buttons.append([

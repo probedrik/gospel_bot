@@ -40,6 +40,20 @@ logger.info(f"🔑 Токен бота загружен: {masked_token}")
 logger.info(
     f"📍 Источник токена: {'файл .env' if env_loaded else 'системные переменные окружения'}")
 
+# ID администратора бота
+ADMIN_USER_ID = os.getenv("ADMIN_USER_ID")
+if ADMIN_USER_ID:
+    try:
+        ADMIN_USER_ID = int(ADMIN_USER_ID)
+        logger.info(f"👑 ID администратора загружен: {ADMIN_USER_ID}")
+    except ValueError:
+        logger.error("❌ ADMIN_USER_ID должен быть числом!")
+        ADMIN_USER_ID = None
+else:
+    logger.warning(
+        "⚠️ ADMIN_USER_ID не установлен - админские функции недоступны")
+    ADMIN_USER_ID = None
+
 # Проверяем правильность формата .env файла
 if env_loaded:
     try:

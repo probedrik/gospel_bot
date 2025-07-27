@@ -288,6 +288,28 @@ async def create_ai_verse_buttons(verse_ref: str, user_id: int, from_ai_assistan
     if action_row:
         buttons.append(action_row)
 
+    # Кнопка закладки для стиха/диапазона стихов
+    from utils.bookmark_utils import create_bookmark_button
+    from handlers.bookmark_handlers import check_if_bookmarked
+    
+    verse_start_num = int(verse_start) if verse_start else None
+    verse_end_num = int(verse_end) if verse_end and verse_end != verse_start else None
+    
+    # Проверяем, добавлен ли стих в закладки
+    is_bookmarked = await check_if_bookmarked(
+        user_id, book_id, chapter, None, verse_start_num, verse_end_num
+    )
+    
+    bookmark_button = create_bookmark_button(
+        book_id=book_id,
+        chapter_start=chapter,
+        verse_start=verse_start_num,
+        verse_end=verse_end_num,
+        is_bookmarked=is_bookmarked
+    )
+    
+    buttons.append([bookmark_button])
+
     # Кнопка возврата (зависит от того, откуда пришел пользователь)
     if from_ai_assistant:
         buttons.append([

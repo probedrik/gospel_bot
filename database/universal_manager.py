@@ -257,16 +257,42 @@ class UniversalDatabaseManager:
         return await self.manager.get_saved_commentary(
             user_id, book_id, chapter_start, chapter_end, verse_start, verse_end, commentary_type)
 
-    async def delete_saved_commentary(self, user_id: int, book_id: int, chapter_start: int,
+    async def delete_saved_commentary(self, user_id: int, book_id: int = None, chapter_start: int = None,
                                       chapter_end: int = None, verse_start: int = None, verse_end: int = None,
-                                      commentary_type: str = "ai") -> bool:
-        """Удаляет сохраненное толкование"""
-        return await self.manager.delete_saved_commentary(
-            user_id, book_id, chapter_start, chapter_end, verse_start, verse_end, commentary_type)
+                                      commentary_type: str = "ai", commentary_id: int = None) -> bool:
+        """Удаляет сохраненное толкование по параметрам или ID"""
+        if commentary_id is not None:
+            # Удаление по ID (для новой системы закладок)
+            if hasattr(self.manager, 'delete_commentary_by_id'):
+                return await self.manager.delete_commentary_by_id(user_id, commentary_id)
+            else:
+                # Fallback: получаем все комментарии и находим нужный
+                commentaries = await self.get_user_commentaries(user_id)
+                for i, commentary in enumerate(commentaries):
+                    if commentary.get('id') == commentary_id:
+                        # Используем данные из комментария для удаления
+                        return await self.manager.delete_saved_commentary(
+                            user_id, 
+                            commentary.get('book_id'),
+                            commentary.get('chapter_start'),
+                            commentary.get('chapter_end'),
+                            commentary.get('verse_start'),
+                            commentary.get('verse_end'),
+                            commentary.get('commentary_type', 'ai')
+                        )
+                return False
+        else:
+            # Удаление по параметрам (старый способ)
+            return await self.manager.delete_saved_commentary(
+                user_id, book_id, chapter_start, chapter_end, verse_start, verse_end, commentary_type)
 
     async def get_user_commentaries(self, user_id: int, limit: int = 50) -> list:
         """Получает последние сохраненные толкования пользователя"""
         return await self.manager.get_user_commentaries(user_id, limit)
+    
+    async def get_saved_commentaries(self, user_id: int, limit: int = 50) -> list:
+        """Алиас для get_user_commentaries для совместимости"""
+        return await self.get_user_commentaries(user_id, limit)
 
     # Методы для библейских тем
     async def get_bible_topics(self, search_query: str = "", limit: int = 50) -> list:

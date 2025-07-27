@@ -101,6 +101,26 @@ class DatabaseManager:
             )
             ''')
 
+            # Таблица сохраненных комментариев
+            logger.info("Создание/проверка таблицы saved_commentaries")
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS saved_commentaries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                book_id INTEGER NOT NULL,
+                chapter_start INTEGER NOT NULL,
+                chapter_end INTEGER,
+                verse_start INTEGER,
+                verse_end INTEGER,
+                reference_text TEXT NOT NULL,
+                commentary_text TEXT NOT NULL,
+                commentary_type TEXT DEFAULT 'ai',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users (user_id)
+            )
+            ''')
+
             # Таблица прогресса чтения
             logger.info("Создание/проверка таблицы reading_progress")
             cursor.execute('''
@@ -316,7 +336,7 @@ class DatabaseManager:
             True если закладка успешно добавлена, False в противном случае
         """
         logger.info(
-            f"Попытка добавления закладки: {user_id} - {display_text} (book_id={book_id}, chapter={chapter})")
+            f"Попытка добавления закладки: {user_id} - {display_text} (book_id={book_id}, chapter_start={chapter_start})")
 
         # Проверяем, существует ли директория для БД
         db_dir = os.path.dirname(self.db_file)
@@ -814,6 +834,23 @@ class DatabaseManager:
             )''')
 
             cursor.execute('''
+            CREATE TABLE IF NOT EXISTS saved_commentaries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                book_id INTEGER NOT NULL,
+                chapter_start INTEGER NOT NULL,
+                chapter_end INTEGER,
+                verse_start INTEGER,
+                verse_end INTEGER,
+                reference_text TEXT NOT NULL,
+                commentary_text TEXT NOT NULL,
+                commentary_type TEXT DEFAULT 'ai',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users (user_id)
+            )''')
+
+            cursor.execute('''
             CREATE TABLE IF NOT EXISTS reading_progress (
                 user_id INTEGER,
                 plan_id TEXT,
@@ -1034,30 +1071,154 @@ class DatabaseManager:
         logger.info(f"[DB_SQLITE] Асинхронно проверен статус части: {result}")
         return result
 
-    # Методы для сохраненных толкований (заглушки для SQLite)
+    # Методы для сохраненных толкований
     async def save_commentary(self, user_id: int, book_id: int, chapter_start: int,
                               chapter_end: int = None, verse_start: int = None, verse_end: int = None,
                               reference_text: str = "", commentary_text: str = "",
                               commentary_type: str = "ai") -> bool:
-        """Сохраняет толкование для пользователя (не реализовано для SQLite)"""
-        return False
+        """Сохраняет толкование для пользователя"""
+        def _execute():
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            
+            try:
+                # Проверяем, есть ли уже комментарий для этой ссылки
+                cursor.execute('''
+                    SELECT id FROM saved_commentaries 
+                    WHERE user_id = ? AND book_id = ? AND chapter_start = ? 
+                    AND chapter_end IS ? AND verse_start IS ? AND verse_end IS ? 
+                    AND commentary_type = ?
+                ''', (user_id, book_id, chapter_start, chapter_end, verse_start, verse_end, commentary_type))
+                
+                existing = cursor.fetchone()
+                
+                if existing:
+                    # Обновляем существующий
+                    cursor.execute('''
+                        UPDATE saved_commentaries 
+                        SET reference_text = ?, commentary_text = ?, updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                    ''', (reference_text, commentary_text, existing[0]))
+                else:
+                    # Создаем новый
+                    cursor.execute('''
+                        INSERT INTO saved_commentaries 
+                        (user_id, book_id, chapter_start, chapter_end, verse_start, verse_end,
+                         reference_text, commentary_text, commentary_type)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (user_id, book_id, chapter_start, chapter_end, verse_start, verse_end,
+                          reference_text, commentary_text, commentary_type))
+                
+                conn.commit()
+                return True
+                
+            except Exception as e:
+                logger.error(f"Ошибка сохранения комментария: {e}")
+                conn.rollback()
+                return False
+            finally:
+                conn.close()
+
+        return await asyncio.to_thread(_execute)
 
     async def get_saved_commentary(self, user_id: int, book_id: int, chapter_start: int,
                                    chapter_end: int = None, verse_start: int = None, verse_end: int = None,
                                    commentary_type: str = "ai") -> Optional[str]:
-        """Получает сохраненное толкование (не реализовано для SQLite)"""
-        return None
+        """Получает сохраненное толкование"""
+        def _execute():
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            
+            try:
+                cursor.execute('''
+                    SELECT commentary_text FROM saved_commentaries 
+                    WHERE user_id = ? AND book_id = ? AND chapter_start = ? 
+                    AND chapter_end IS ? AND verse_start IS ? AND verse_end IS ? 
+                    AND commentary_type = ?
+                ''', (user_id, book_id, chapter_start, chapter_end, verse_start, verse_end, commentary_type))
+                
+                result = cursor.fetchone()
+                return result[0] if result else None
+                
+            except Exception as e:
+                logger.error(f"Ошибка получения комментария: {e}")
+                return None
+            finally:
+                conn.close()
+
+        return await asyncio.to_thread(_execute)
 
     async def delete_saved_commentary(self, user_id: int, book_id: int, chapter_start: int,
                                       chapter_end: int = None, verse_start: int = None, verse_end: int = None,
                                       commentary_type: str = "ai") -> bool:
-        """Удаляет сохраненное толкование (не реализовано для SQLite)"""
-        return False
+        """Удаляет сохраненное толкование"""
+        def _execute():
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            
+            try:
+                cursor.execute('''
+                    DELETE FROM saved_commentaries 
+                    WHERE user_id = ? AND book_id = ? AND chapter_start = ? 
+                    AND chapter_end IS ? AND verse_start IS ? AND verse_end IS ? 
+                    AND commentary_type = ?
+                ''', (user_id, book_id, chapter_start, chapter_end, verse_start, verse_end, commentary_type))
+                
+                conn.commit()
+                return cursor.rowcount > 0
+                
+            except Exception as e:
+                logger.error(f"Ошибка удаления комментария: {e}")
+                conn.rollback()
+                return False
+            finally:
+                conn.close()
+
+        return await asyncio.to_thread(_execute)
 
     async def get_user_commentaries(self, user_id: int, limit: int = 50) -> list:
-        """Получает последние сохраненные толкования пользователя (заглушка для SQLite)"""
-        logger.warning("Метод get_user_commentaries не реализован для SQLite")
-        return []
+        """Получает последние сохраненные толкования пользователя"""
+        def _execute():
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            
+            try:
+                cursor.execute('''
+                    SELECT id, book_id, chapter_start, chapter_end, verse_start, verse_end,
+                           reference_text, commentary_text, commentary_type, created_at
+                    FROM saved_commentaries 
+                    WHERE user_id = ?
+                    ORDER BY created_at DESC
+                    LIMIT ?
+                ''', (user_id, limit))
+                
+                results = cursor.fetchall()
+                
+                # Преобразуем в список словарей
+                commentaries = []
+                for row in results:
+                    commentaries.append({
+                        'id': row[0],
+                        'book_id': row[1],
+                        'chapter_start': row[2],
+                        'chapter_end': row[3],
+                        'verse_start': row[4],
+                        'verse_end': row[5],
+                        'reference_text': row[6],
+                        'commentary_text': row[7],
+                        'commentary_type': row[8],
+                        'created_at': row[9]
+                    })
+                
+                return commentaries
+                
+            except Exception as e:
+                logger.error(f"Ошибка получения комментариев пользователя: {e}")
+                return []
+            finally:
+                conn.close()
+
+        return await asyncio.to_thread(_execute)
 
     # Заглушки для методов библейских тем (для совместимости API)
     async def get_bible_topics(self, search_query: str = "", limit: int = 50) -> list:

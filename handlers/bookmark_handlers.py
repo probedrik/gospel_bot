@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 
-@router.callback_query(F.data.regexp(r'^bookmark_(add|remove)_\d+_\d+_\d+_\d+(_\d+)?$'))
+@router.callback_query(F.data.regexp(r'^bookmark_(add|remove)_\d+_\d+_\d+_\d+_\d+$'))
 async def handle_bookmark_action(callback: CallbackQuery, state: FSMContext):
     """
     Обработчик добавления/удаления закладок

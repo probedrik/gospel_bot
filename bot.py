@@ -132,17 +132,22 @@ async def main() -> None:
     # Регистрируем роутеры с обработчиками
     dp.include_router(admin.admin_router)  # Административные команды первыми
     dp.include_router(commands.router)
+    
+    # Новые обработчики закладок (ВАЖНО: регистрируем ДО старых!)
+    from handlers import bookmarks_new, bookmark_handlers
+    dp.include_router(bookmarks_new.router)
+    dp.include_router(bookmark_handlers.router)
+    
     dp.include_router(text_messages.router)
     dp.include_router(callbacks.router)
-    dp.include_router(bookmarks.router)
+    dp.include_router(bookmarks.router)  # Старый обработчик закладок
     dp.include_router(bookmark_callbacks.router)
     dp.include_router(reading_plans.router)
     dp.include_router(ai_assistant.router)  # ИИ помощник
     
-    # Новые обработчики закладок
-    from handlers import bookmarks_new, bookmark_handlers
-    dp.include_router(bookmarks_new.router)
-    dp.include_router(bookmark_handlers.router)
+    # Настройки
+    from handlers import settings as settings_handler
+    dp.include_router(settings_handler.router)
 
     # Запускаем бота
     try:

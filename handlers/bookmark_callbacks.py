@@ -55,88 +55,35 @@ async def add_bookmark(callback: CallbackQuery, state: FSMContext, db=None):
     display_text = f"{book_name} {chapter}"
     logger.info(f"Подготовлен текст закладки: {display_text}")
 
-    # Флаги для отслеживания успеха
-    bookmark_added_to_db = False
-    bookmark_added_to_state = False
-
-    # Форсируем создание таблиц перед добавлением
+    # Добавляем закладку с новой структурой
     try:
-        db_manager._create_tables()
-        logger.info("Таблицы в БД проверены перед прямым добавлением закладки")
-    except Exception as e:
-        logger.error(f"Ошибка при проверке таблиц: {e}")
-
-    # 1. Сначала добавляем пользователя, если его ещё нет
-    try:
-        await db_manager.add_user(user_id, callback.from_user.username or "", callback.from_user.first_name or "")
-        logger.info(f"Пользователь {user_id} добавлен/обновлен в БД")
-    except Exception as e:
-        logger.error(f"Ошибка при добавлении пользователя: {e}", exc_info=True)
-
-    # 2. Проверяем, есть ли уже такая закладка в БД
-    try:
-        bookmarks = await db_manager.get_bookmarks(user_id)
-
-        # Поддержка разных форматов данных
-        if bookmarks:
-            if isinstance(bookmarks[0], dict):
-                bookmark_exists = any(
-                    bm['book_id'] == book_id and bm['chapter'] == chapter for bm in bookmarks)
-            else:
-                bookmark_exists = any(
-                    bm[0] == book_id and bm[1] == chapter for bm in bookmarks)
+        success = await db_manager.add_bookmark(
+            user_id=user_id,
+            book_id=book_id,
+            chapter_start=chapter,
+            display_text=display_text
+        )
+        
+        if success:
+            await callback.answer(f"✅ Добавлено в закладки: {display_text}")
+            logger.info(f"Закладка успешно добавлена: {display_text}")
         else:
-            bookmark_exists = False
-
-        if bookmark_exists:
-            logger.info(f"Закладка {display_text} уже существует в БД")
-            bookmark_added_to_db = True
-        else:
-            # 3. Напрямую добавляем закладку в БД
-            result = await db_manager.add_bookmark(user_id, book_id, chapter, display_text)
-            logger.info(
-                f"Результат прямого добавления закладки в БД: {result}")
-            bookmark_added_to_db = result
-
-            # Проверяем, что закладка действительно добавлена
-            bookmarks = await db_manager.get_bookmarks(user_id)
-
-            # Поддержка разных форматов данных
-            if bookmarks:
-                if isinstance(bookmarks[0], dict):
-                    bookmark_in_db = any(
-                        bm['book_id'] == book_id and bm['chapter'] == chapter for bm in bookmarks)
-                else:
-                    bookmark_in_db = any(
-                        bm[0] == book_id and bm[1] == chapter for bm in bookmarks)
-            else:
-                bookmark_in_db = False
-
-            logger.info(
-                f"Проверка наличия закладки в БД после добавления: {'найдена' if bookmark_in_db else 'не найдена'}")
-            bookmark_added_to_db = bookmark_in_db
+            await callback.answer("❌ Ошибка при добавлении закладки")
+            logger.error(f"Не удалось добавить закладку: {display_text}")
+            return
+            
     except Exception as e:
-        logger.error(
-            f"Ошибка при добавлении закладки в БД: {e}", exc_info=True)
-        bookmark_added_to_db = False
+        logger.error(f"Ошибка при добавлении закладки: {e}")
+        await callback.answer("❌ Ошибка при добавлении закладки")
+        return
 
-    # 4. Дополнительно добавляем в состояние для совместимости
-    try:
-        await add_bookmark_to_state(state, book_id, chapter, display_text)
-        logger.info(f"Закладка добавлена в state: {display_text}")
-        bookmark_added_to_state = True
-    except Exception as e:
-        logger.error(
-            f"Ошибка при добавлении закладки в состояние: {e}", exc_info=True)
-        bookmark_added_to_state = False
-
-    # 5. Формируем ответное сообщение
+    # Обновляем кнопки в сообщении
     try:
         max_chapters = bible_data.max_chapters.get(book_id, 1)
         has_previous = chapter > 1
         has_next = chapter < max_chapters
 
-        # Создаем кнопки действий для главы (исключаем AI кнопку если нужно)
+        # Создаем кнопки действий для главы
         from utils.bible_data import create_chapter_action_buttons
         extra_buttons = await create_chapter_action_buttons(book_id, chapter, user_id=user_id)
 
@@ -145,15 +92,8 @@ async def add_bookmark(callback: CallbackQuery, state: FSMContext, db=None):
             reply_markup=create_navigation_keyboard(
                 has_previous, has_next, True, extra_buttons)
         )
-
-        # Отображаем короткое уведомление
-        if bookmark_added_to_db or bookmark_added_to_state:
-            await callback.answer("Закладка добавлена")
-        else:
-            await callback.answer("Ошибка при добавлении закладки")
     except Exception as e:
-        logger.error(f"Ошибка при отправке ответа: {e}", exc_info=True)
-        await callback.answer("Произошла ошибка")
+        logger.error(f"Ошибка при обновлении кнопок: {e}", exc_info=True)
 
 
 @router.callback_query(F.data == "clear_bookmarks")
@@ -268,7 +208,7 @@ async def bookmark_info(callback: CallbackQuery, state: FSMContext, db=None):
         await callback.answer("Ошибка при удалении закладки")
 
 
-@router.callback_query(F.data.startswith("bookmark_"))
+@router.callback_query(F.data.regexp(r'^bookmark_(\d+)_(\d+)$'))
 async def bookmark_selected(callback: CallbackQuery, state: FSMContext, db=None):
     """Обработчик для выбора закладки"""
     logger.info(f"Вызван обработчик выбора закладки: {callback.data}")

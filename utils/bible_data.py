@@ -256,6 +256,10 @@ class BibleData:
     def get_book_name(self, book_id: int) -> str:
         """Возвращает название книги по её ID."""
         return self.book_dict.get(book_id, f"Книга {book_id}")
+    
+    def get_book_name_by_id(self, book_id: int) -> str:
+        """Алиас для get_book_name для совместимости."""
+        return self.get_book_name(book_id)
 
     def get_book_id(self, abbr: str) -> Optional[int]:
         """Возвращает ID книги по её сокращению."""
@@ -461,5 +465,21 @@ async def create_chapter_action_buttons(book_id, chapter, en_book=None, exclude_
                 callback_data=f"gpt_explain_{book_param}_{chapter}_0"
             )
         ])
+
+    # Кнопка закладки (если передан user_id)
+    if user_id:
+        from utils.bookmark_utils import create_bookmark_button
+        from handlers.bookmark_handlers import check_if_bookmarked
+        
+        # Проверяем, добавлена ли глава в закладки
+        is_bookmarked = await check_if_bookmarked(user_id, book_id, chapter)
+        
+        bookmark_button = create_bookmark_button(
+            book_id=book_id,
+            chapter_start=chapter,
+            is_bookmarked=is_bookmarked
+        )
+        
+        buttons.append([bookmark_button])
 
     return buttons

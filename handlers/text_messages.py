@@ -166,13 +166,6 @@ async def help_message(message: Message):
     await message.answer(help_text, parse_mode="HTML")
 
 
-@router.message(F.text == "📝 Мои закладки")
-async def show_bookmarks_message(message: Message, state: FSMContext):
-    """Обработчик для показа закладок через текстовую команду"""
-    from handlers.bookmarks import show_bookmarks
-    await show_bookmarks(message, state)
-
-
 @router.message(F.text == "🔄 Сменить перевод")
 async def change_translation_message(message: Message):
     """Обработчик для смены перевода через текстовую команду (скрыт из главного меню, но доступен через справку)"""
@@ -310,23 +303,15 @@ async def chapter_input(message: Message, state: FSMContext, db=None):
         )
 
 
-@router.message(F.text == "🔍 Найти стих")
-async def search_verse(message: Message):
-    """Обработчик поиска стихов"""
-    await message.answer(
-        "Введите ссылку на стих или отрывок в одном из форматов:\n"
-        "<b>Книга глава</b> — вся глава (например: <code>Ин 3</code>)\n"
-        "<b>Книга глава:стих</b> — один стих (например: <code>Ин 3:16</code>)\n"
-        "<b>Книга глава:стих-стих</b> — диапазон стихов (например: <code>Ин 3:16-18</code>)"
-    )
+# Обработчик поиска стихов убран - теперь поиск работает автоматически при вводе ссылки
 
 
 @router.message(
     lambda msg: re.match(
-        r'^([а-яА-ЯёЁ0-9\s]+)\s+(\d+)(?::(\d+)(?:-(\d+))?)?$', msg.text.strip(), re.IGNORECASE) is not None
+        r'^([а-яА-ЯёЁ0-9\s]+)\s+(\d+)(?::(\d+)(?:-(?:(\d+):)?(\d+))?)?$', msg.text.strip(), re.IGNORECASE) is not None
 )
 async def verse_reference(message: Message, state: FSMContext):
-    """Обработчик ссылок на стихи, диапазоны и главы: 'Книга глава', 'Книга глава:стих', 'Книга глава:стих-стих'"""
+    """Обработчик ссылок на стихи, диапазоны и главы: 'Книга глава', 'Книга глава:стих', 'Книга глава:стих-стих', 'Книга глава:стих-глава:стих'"""
     try:
         text, meta = await get_verse_by_reference(state, message.text)
 
@@ -440,6 +425,27 @@ async def verse_reference(message: Message, state: FSMContext):
                             callback_data=cb_data
                         )
                     ])
+
+                # Добавляем кнопку закладки для стиха
+                if book_id and verse:
+                    from utils.bookmark_utils import create_bookmark_button
+                    from handlers.bookmark_handlers import check_if_bookmarked
+                    
+                    verse_num = int(verse)
+                    # Проверяем, добавлен ли стих в закладки
+                    is_verse_bookmarked = await check_if_bookmarked(
+                        message.from_user.id, book_id, chapter, None, verse_num, None
+                    )
+                    
+                    bookmark_button = create_bookmark_button(
+                        book_id=book_id,
+                        chapter_start=chapter,
+                        verse_start=verse_num,
+                        is_bookmarked=is_verse_bookmarked
+                    )
+                    
+                    buttons.append([bookmark_button])
+                
                 if buttons:
                     kb = InlineKeyboardMarkup(inline_keyboard=buttons)
                     await message.answer("Выберите действие:", reply_markup=kb)
@@ -820,6 +826,29 @@ async def topic_verse_callback(callback: CallbackQuery, state: FSMContext):
         # Добавляем ряд кнопок действий (если есть)
         if action_row:
             buttons.append(action_row)
+        
+        # Добавляем кнопку закладки для стиха/отрывка
+        if book_id:
+            from utils.bookmark_utils import create_bookmark_button
+            from handlers.bookmark_handlers import check_if_bookmarked
+            
+            verse_start_num = int(verse_start) if verse_start else None
+            verse_end_num = int(verse_end) if verse_end and verse_end != verse_start else None
+            
+            # Проверяем, добавлен ли стих в закладки
+            is_bookmarked = await check_if_bookmarked(
+                callback.from_user.id, book_id, chapter, None, verse_start_num, verse_end_num
+            )
+            
+            bookmark_button = create_bookmark_button(
+                book_id=book_id,
+                chapter_start=chapter,
+                verse_start=verse_start_num,
+                verse_end=verse_end_num,
+                is_bookmarked=is_bookmarked
+            )
+            
+            buttons.append([bookmark_button])
         
         # Добавляем кнопку "Назад к темам" для готовых тем
         buttons.append([
@@ -1354,6 +1383,27 @@ async def gpt_explain_callback(callback: CallbackQuery, state: FSMContext = None
                     else:
                         # Если не найдено сокращение, только action_buttons + save_buttons
                         all_buttons = action_buttons + save_buttons
+
+
+
+                    # Добавляем кнопку закладки для стиха
+                    from utils.bookmark_utils import create_bookmark_button
+                    from handlers.bookmark_handlers import check_if_bookmarked
+                    
+                    # Проверяем, добавлен ли стих в закладки
+                    is_verse_bookmarked = await check_if_bookmarked(
+                        user_id, book_id, chapter, None, verse_start_num, verse_end_num
+                    )
+                    
+                    bookmark_button = create_bookmark_button(
+                        book_id=book_id,
+                        chapter_start=chapter,
+                        verse_start=verse_start_num,
+                        verse_end=verse_end_num,
+                        is_bookmarked=is_verse_bookmarked
+                    )
+                    
+                    all_buttons.append([bookmark_button])
 
                     # Добавляем кнопку возврата в зависимости от контекста
                     if state:
@@ -1937,12 +1987,77 @@ async def reading_plan_text(callback: CallbackQuery, state: FSMContext):
             [InlineKeyboardButton(
                 text="🤖 Разбор от ИИ",
                 callback_data=f"readingai_{plan_id}_{day}_{part_idx}"
-            )],
-            [InlineKeyboardButton(
-                text="⬅️ Назад к дню",
-                callback_data=f"readingday_{plan_id}_{day}"
             )]
         ]
+        
+        # Добавляем кнопку закладки для отрывка из плана чтения
+        from handlers.verse_reference import parse_reference
+        
+        # Используем полноценный парсер ссылок, который поддерживает все форматы
+        book_name, chapter_or_range, verse_or_range = parse_reference(reading_part)
+        
+        if book_name:
+            book_id = bible_data.get_book_id(book_name)
+            
+            if book_id:
+                from utils.bookmark_utils import create_bookmark_button
+                from handlers.bookmark_handlers import check_if_bookmarked
+                
+                # Определяем тип ссылки и параметры для закладки
+                chapter_start = None
+                chapter_end = None
+                verse_start = None
+                verse_end = None
+                
+                if chapter_or_range == "chapter_range":
+                    # Диапазон глав: Быт 1-3
+                    chapter_start, chapter_end = verse_or_range
+                elif chapter_or_range == "cross_chapter_range":
+                    # Диапазон стихов через главы: Быт 1:1-2:25
+                    start_chapter, start_verse, end_chapter, end_verse = verse_or_range
+                    chapter_start = start_chapter
+                    chapter_end = end_chapter
+                    verse_start = start_verse
+                    verse_end = end_verse
+                elif isinstance(verse_or_range, tuple):
+                    # Диапазон стихов в одной главе: Быт 1:1-5
+                    chapter_start = chapter_or_range
+                    verse_start, verse_end = verse_or_range
+                elif isinstance(verse_or_range, int):
+                    # Один стих: Быт 1:1
+                    chapter_start = chapter_or_range
+                    verse_start = verse_or_range
+                elif verse_or_range is None:
+                    # Вся глава: Быт 1
+                    chapter_start = chapter_or_range
+                else:
+                    # Неизвестный формат, используем как главу
+                    chapter_start = chapter_or_range if isinstance(chapter_or_range, int) else None
+                
+                if chapter_start:
+                    # Проверяем, добавлен ли отрывок в закладки
+                    is_bookmarked = await check_if_bookmarked(
+                        user_id, book_id, chapter_start, chapter_end, verse_start, verse_end
+                    )
+                    
+                    bookmark_button = create_bookmark_button(
+                        book_id=book_id,
+                        chapter_start=chapter_start,
+                        chapter_end=chapter_end,
+                        verse_start=verse_start,
+                        verse_end=verse_end,
+                        is_bookmarked=is_bookmarked
+                    )
+                    
+                    action_buttons.append([bookmark_button])
+        
+        # Кнопка возврата
+        action_buttons.append([
+            InlineKeyboardButton(
+                text="⬅️ Назад к дню",
+                callback_data=f"readingday_{plan_id}_{day}"
+            )
+        ])
 
         kb = InlineKeyboardMarkup(inline_keyboard=action_buttons)
 
