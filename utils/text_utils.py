@@ -7,7 +7,8 @@ from config.settings import MESS_MAX_LENGTH
 def split_text(text: str, max_length: int = MESS_MAX_LENGTH) -> list[str]:
     """
     Разбивает длинный текст на части, не превышающие максимальную длину.
-    Старается сохранить целостность абзацев и избегать очень маленьких кусков в конце.
+    Старается сохранить целостность абзацев, избегать очень маленьких кусков в конце
+    и корректно обрабатывать HTML теги (особенно blockquote).
 
     Args:
         text: Исходный текст для разбивки
@@ -23,7 +24,12 @@ def split_text(text: str, max_length: int = MESS_MAX_LENGTH) -> list[str]:
     # Минимальная длина части (чтобы избежать маленьких кусков)
     min_part_length = 200
 
-    while len(text) > 0:
+    iteration_count = 0
+    max_iterations = 50  # Защита от бесконечного цикла
+
+    while len(text) > 0 and iteration_count < max_iterations:
+        iteration_count += 1
+
         if len(text) <= max_length:
             # Если остался небольшой кусок, проверяем можно ли его объединить с предыдущей частью
             if parts and len(text) < min_part_length and len(parts[-1]) + len(text) + 10 <= max_length:
@@ -46,12 +52,105 @@ def split_text(text: str, max_length: int = MESS_MAX_LENGTH) -> list[str]:
         if split_position == -1:
             split_position = max_length
 
+        # Проверяем, не разрывается ли HTML тег на месте разделения
         part = text[:split_position].strip()
+
+        # Проверяем баланс HTML тегов в этой части
+        if part and _has_unbalanced_html_tags(part):
+            # Если HTML теги не сбалансированы, пытаемся найти лучшее место для разделения
+            better_split = _find_safe_split_position(
+                text, split_position, max_length)
+            if better_split != split_position and better_split > 0:
+                split_position = better_split
+
+            # ВСЕГДА обновляем part после поиска позиции
+            part = text[:split_position].strip()
+
+        # ВСЕГДА проверяем баланс тегов после всех попыток найти лучшую позицию
+        if part and _has_unbalanced_html_tags(part):
+            # Подсчитываем открытые blockquote теги
+            open_blockquotes = part.count(
+                '<blockquote>') - part.count('</blockquote>')
+            if open_blockquotes > 0:
+                # Добавляем закрывающие теги
+                part += '</blockquote>' * open_blockquotes
+
         if part:
             parts.append(part)
-        text = text[split_position:].strip()
+
+        # Убеждаемся, что мы продвигаемся вперед
+        remaining_text = text[split_position:].strip()
+        if remaining_text == text.strip():
+            # Если текст не изменился, принудительно отрезаем хотя бы один символ
+            remaining_text = text[1:].strip() if len(text) > 1 else ""
+
+        # Если мы принудительно закрыли blockquote теги в предыдущей части,
+        # нужно открыть их в следующей части
+        if remaining_text and part and part.endswith('</blockquote>') and remaining_text.count('<blockquote>') < remaining_text.count('</blockquote>'):
+            # Подсчитываем сколько blockquote тегов нужно открыть
+            missing_opens = remaining_text.count(
+                '</blockquote>') - remaining_text.count('<blockquote>')
+            if missing_opens > 0:
+                remaining_text = '<blockquote>' * missing_opens + remaining_text
+
+        text = remaining_text
+
+    # Если достигли лимита итераций, добавляем оставшийся текст
+    if iteration_count >= max_iterations and text:
+        parts.append(text.strip())
 
     return parts
+
+
+def _has_unbalanced_html_tags(text: str) -> bool:
+    """
+    Проверяет, есть ли несбалансированные HTML теги в тексте.
+    Особое внимание уделяется тегам blockquote, b, i, u, code.
+    """
+    import re
+
+    # Важные теги которые должны быть сбалансированы
+    important_tags = ['blockquote', 'b', 'i', 'u', 'code', 'pre', 'a']
+
+    for tag in important_tags:
+        # Считаем открывающие и закрывающие теги
+        open_count = len(re.findall(f'<{tag}[^>]*>', text, re.IGNORECASE))
+        close_count = len(re.findall(f'</{tag}>', text, re.IGNORECASE))
+
+        if open_count != close_count:
+            return True
+
+    return False
+
+
+def _find_safe_split_position(text: str, current_split: int, max_length: int) -> int:
+    """
+    Находит безопасную позицию для разделения текста, избегая разрыва HTML тегов.
+    """
+    import re
+
+    # СПЕЦИАЛЬНЫЙ СЛУЧАЙ: если весь текст обернут в один <blockquote>
+    # и нет способа разделить без нарушения баланса, то разделяем внутри blockquote
+    # и добавляем закрывающий/открывающий теги
+
+    # Ищем позицию для разделения на границах слов/переносов строк
+    best_pos = current_split
+
+    # Сначала ищем назад
+    for pos in range(current_split, max(0, current_split - 500), -1):
+        if pos == 0 or text[pos] in [' ', '\n', '.', '!', '?']:
+            if pos > 100:  # Минимальная длина части
+                best_pos = pos
+                return best_pos
+
+    # Если не нашли назад, ищем вперед (но не больше max_length)
+    for pos in range(current_split, min(len(text), max_length)):
+        if text[pos] in [' ', '\n', '.', '!', '?']:
+            best_pos = pos
+            return best_pos
+
+    # В крайнем случае возвращаем оригинальную позицию
+    return current_split
 
 
 def format_chapter_with_verses(chapter_data: dict, format_mode: str = "HTML") -> str:
@@ -160,7 +259,22 @@ def format_as_quote(text: str) -> str:
         return text
 
     # Используем HTML-тег blockquote для создания настоящей визуальной цитаты
-    return f"<blockquote>{text}</blockquote>"
+    import html
+    import re
+
+    # СНАЧАЛА очищаем от HTML тегов
+    cleaned_text = re.sub(r'<[^>]*>', '', text)  # Удаляем все HTML теги
+
+    # ЗАТЕМ очищаем от markdown символов
+    # **жирный** → жирный
+    cleaned_text = re.sub(r'\*\*([^*]+)\*\*', r'\1', cleaned_text)
+    cleaned_text = re.sub(r'\*([^*]+)\*', r'\1',
+                          cleaned_text)  # *курсив* → курсив
+    cleaned_text = re.sub(r'`([^`]+)`', r'\1', cleaned_text)  # `код` → код
+
+    cleaned_text = cleaned_text.strip()
+    escaped_text = html.escape(cleaned_text)
+    return f"<blockquote>{escaped_text}</blockquote>"
 
 
 def get_verse_format_functions(chapter_num=None):

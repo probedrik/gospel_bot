@@ -67,10 +67,20 @@ class DatabaseManager:
                 username TEXT,
                 first_name TEXT,
                 current_translation TEXT DEFAULT 'rst',
+                response_length TEXT DEFAULT 'full',
                 last_activity TIMESTAMP,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
             ''')
+
+            # Добавляем поле response_length, если его еще нет (миграция)
+            try:
+                cursor.execute(
+                    "ALTER TABLE users ADD COLUMN response_length TEXT DEFAULT 'full'")
+                logger.info("Добавлено поле response_length в таблицу users")
+            except sqlite3.OperationalError:
+                # Поле уже существует
+                pass
 
             # Таблица закладок
             logger.info("Создание/проверка таблицы bookmarks")
@@ -320,9 +330,54 @@ class DatabaseManager:
 
         return await asyncio.to_thread(_execute)
 
-    async def add_bookmark(self, user_id: int, book_id: int, chapter_start: int, 
-                          chapter_end: int = None, verse_start: int = None, 
-                          verse_end: int = None, display_text: str = None, note: str = None) -> bool:
+    async def update_user_response_length(self, user_id: int, response_length: str) -> None:
+        """
+        Обновляет настройку длины ответа ИИ пользователя.
+
+        Args:
+            user_id: ID пользователя Telegram
+            response_length: Тип ответа ('short' или 'full')
+        """
+        def _execute():
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE users SET response_length = ? WHERE user_id = ?",
+                (response_length, user_id)
+            )
+            conn.commit()
+            conn.close()
+
+        await asyncio.to_thread(_execute)
+        logger.debug(
+            f"Обновлена настройка длины ответа для пользователя {user_id}: {response_length}")
+
+    async def get_user_response_length(self, user_id: int) -> str:
+        """
+        Получает настройку длины ответа ИИ пользователя.
+
+        Args:
+            user_id: ID пользователя Telegram
+
+        Returns:
+            Тип ответа ('short' или 'full', по умолчанию 'full')
+        """
+        def _execute():
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT response_length FROM users WHERE user_id = ?",
+                (user_id,)
+            )
+            result = cursor.fetchone()
+            conn.close()
+            return result[0] if result else 'full'
+
+        return await asyncio.to_thread(_execute)
+
+    async def add_bookmark(self, user_id: int, book_id: int, chapter_start: int,
+                           chapter_end: int = None, verse_start: int = None,
+                           verse_end: int = None, display_text: str = None, note: str = None) -> bool:
         """
         Добавляет закладку для пользователя.
 
@@ -389,7 +444,8 @@ class DatabaseManager:
                 f"Проверка существующей закладки: {user_id}, {book_id}, {chapter}")
             cursor.execute(
                 "SELECT 1 FROM bookmarks WHERE user_id = ? AND book_id = ? AND chapter_start = ? AND chapter_end IS ? AND verse_start IS ? AND verse_end IS ?",
-                (user_id, book_id, chapter_start, chapter_end, verse_start, verse_end)
+                (user_id, book_id, chapter_start,
+                 chapter_end, verse_start, verse_end)
             )
             if cursor.fetchone():
                 logger.info(
@@ -415,7 +471,8 @@ class DatabaseManager:
                     # Проверяем, была ли закладка действительно добавлена
                     cursor.execute(
                         "SELECT * FROM bookmarks WHERE user_id = ? AND book_id = ? AND chapter_start = ? AND chapter_end IS ? AND verse_start IS ? AND verse_end IS ?",
-                        (user_id, book_id, chapter_start, chapter_end, verse_start, verse_end)
+                        (user_id, book_id, chapter_start,
+                         chapter_end, verse_start, verse_end)
                     )
                     result = cursor.fetchone()
                     if result:
@@ -546,8 +603,8 @@ class DatabaseManager:
                 f"Ошибка при получении закладок для пользователя {user_id}: {e}", exc_info=True)
             return []
 
-    async def remove_bookmark(self, user_id: int, book_id: int, chapter_start: int, 
-                             chapter_end: int = None, verse_start: int = None, verse_end: int = None) -> bool:
+    async def remove_bookmark(self, user_id: int, book_id: int, chapter_start: int,
+                              chapter_end: int = None, verse_start: int = None, verse_end: int = None) -> bool:
         """
         Удаляет конкретную закладку пользователя.
 
@@ -558,7 +615,7 @@ class DatabaseManager:
             chapter_end: Конечная глава
             verse_start: Начальный стих
             verse_end: Конечный стих
-        
+
         Returns:
             bool: True если закладка удалена, False если ошибка
         """
@@ -568,7 +625,8 @@ class DatabaseManager:
                 cursor = conn.cursor()
                 cursor.execute(
                     "DELETE FROM bookmarks WHERE user_id = ? AND book_id = ? AND chapter_start = ? AND chapter_end IS ? AND verse_start IS ? AND verse_end IS ?",
-                    (user_id, book_id, chapter_start, chapter_end, verse_start, verse_end)
+                    (user_id, book_id, chapter_start,
+                     chapter_end, verse_start, verse_end)
                 )
                 conn.commit()
                 conn.close()
@@ -579,11 +637,12 @@ class DatabaseManager:
 
         result = await asyncio.to_thread(_execute)
         if result:
-            logger.debug(f"Удалена закладка для пользователя {user_id}: {book_id} {chapter_start}")
+            logger.debug(
+                f"Удалена закладка для пользователя {user_id}: {book_id} {chapter_start}")
         return result
 
     async def is_bookmarked(self, user_id: int, book_id: int, chapter_start: int,
-                           chapter_end: int = None, verse_start: int = None, verse_end: int = None) -> bool:
+                            chapter_end: int = None, verse_start: int = None, verse_end: int = None) -> bool:
         """
         Проверяет, есть ли закладка у пользователя.
 
@@ -594,7 +653,7 @@ class DatabaseManager:
             chapter_end: Конечная глава
             verse_start: Начальный стих
             verse_end: Конечный стих
-        
+
         Returns:
             bool: True если закладка существует, False если нет
         """
@@ -604,7 +663,8 @@ class DatabaseManager:
                 cursor = conn.cursor()
                 cursor.execute(
                     "SELECT 1 FROM bookmarks WHERE user_id = ? AND book_id = ? AND chapter_start = ? AND chapter_end IS ? AND verse_start IS ? AND verse_end IS ?",
-                    (user_id, book_id, chapter_start, chapter_end, verse_start, verse_end)
+                    (user_id, book_id, chapter_start,
+                     chapter_end, verse_start, verse_end)
                 )
                 result = cursor.fetchone()
                 conn.close()
@@ -1080,7 +1140,7 @@ class DatabaseManager:
         def _execute():
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
-            
+
             try:
                 # Проверяем, есть ли уже комментарий для этой ссылки
                 cursor.execute('''
@@ -1089,9 +1149,9 @@ class DatabaseManager:
                     AND chapter_end IS ? AND verse_start IS ? AND verse_end IS ? 
                     AND commentary_type = ?
                 ''', (user_id, book_id, chapter_start, chapter_end, verse_start, verse_end, commentary_type))
-                
+
                 existing = cursor.fetchone()
-                
+
                 if existing:
                     # Обновляем существующий
                     cursor.execute('''
@@ -1108,10 +1168,10 @@ class DatabaseManager:
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ''', (user_id, book_id, chapter_start, chapter_end, verse_start, verse_end,
                           reference_text, commentary_text, commentary_type))
-                
+
                 conn.commit()
                 return True
-                
+
             except Exception as e:
                 logger.error(f"Ошибка сохранения комментария: {e}")
                 conn.rollback()
@@ -1128,7 +1188,7 @@ class DatabaseManager:
         def _execute():
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
-            
+
             try:
                 cursor.execute('''
                     SELECT commentary_text FROM saved_commentaries 
@@ -1136,10 +1196,10 @@ class DatabaseManager:
                     AND chapter_end IS ? AND verse_start IS ? AND verse_end IS ? 
                     AND commentary_type = ?
                 ''', (user_id, book_id, chapter_start, chapter_end, verse_start, verse_end, commentary_type))
-                
+
                 result = cursor.fetchone()
                 return result[0] if result else None
-                
+
             except Exception as e:
                 logger.error(f"Ошибка получения комментария: {e}")
                 return None
@@ -1155,7 +1215,7 @@ class DatabaseManager:
         def _execute():
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
-            
+
             try:
                 cursor.execute('''
                     DELETE FROM saved_commentaries 
@@ -1163,10 +1223,10 @@ class DatabaseManager:
                     AND chapter_end IS ? AND verse_start IS ? AND verse_end IS ? 
                     AND commentary_type = ?
                 ''', (user_id, book_id, chapter_start, chapter_end, verse_start, verse_end, commentary_type))
-                
+
                 conn.commit()
                 return cursor.rowcount > 0
-                
+
             except Exception as e:
                 logger.error(f"Ошибка удаления комментария: {e}")
                 conn.rollback()
@@ -1181,7 +1241,7 @@ class DatabaseManager:
         def _execute():
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
-            
+
             try:
                 cursor.execute('''
                     SELECT id, book_id, chapter_start, chapter_end, verse_start, verse_end,
@@ -1191,9 +1251,9 @@ class DatabaseManager:
                     ORDER BY created_at DESC
                     LIMIT ?
                 ''', (user_id, limit))
-                
+
                 results = cursor.fetchall()
-                
+
                 # Преобразуем в список словарей
                 commentaries = []
                 for row in results:
@@ -1209,11 +1269,12 @@ class DatabaseManager:
                         'commentary_type': row[8],
                         'created_at': row[9]
                     })
-                
+
                 return commentaries
-                
+
             except Exception as e:
-                logger.error(f"Ошибка получения комментариев пользователя: {e}")
+                logger.error(
+                    f"Ошибка получения комментариев пользователя: {e}")
                 return []
             finally:
                 conn.close()

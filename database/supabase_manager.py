@@ -107,6 +107,44 @@ class SupabaseManager:
                 f"Ошибка обновления активности для пользователя {user_id}: {e}")
             return False
 
+    async def update_user_response_length(self, user_id: int, response_length: str) -> bool:
+        """Обновляет настройку длины ответа ИИ пользователя"""
+        try:
+            result = self.client.table('users').update({
+                'response_length': response_length
+            }).eq('user_id', user_id).execute()
+            return len(result.data) > 0
+        except Exception as e:
+            logger.error(
+                f"Ошибка обновления настройки длины ответа для пользователя {user_id}: {e}")
+            return False
+
+    async def get_user_response_length(self, user_id: int) -> str:
+        """Получает настройку длины ответа ИИ пользователя"""
+        try:
+            result = self.client.table('users').select('response_length').eq(
+                'user_id', user_id).execute()
+            if result.data and len(result.data) > 0:
+                return result.data[0].get('response_length', 'full')
+            return 'full'  # По умолчанию полный режим
+        except Exception as e:
+            logger.error(
+                f"Ошибка получения настройки длины ответа для пользователя {user_id}: {e}")
+            return 'full'
+
+    async def get_user_translation(self, user_id: int) -> str:
+        """Получает предпочитаемый перевод пользователя"""
+        try:
+            result = self.client.table('users').select('translation').eq(
+                'user_id', user_id).execute()
+            if result.data and len(result.data) > 0:
+                return result.data[0].get('translation', 'rst')
+            return 'rst'  # По умолчанию RST
+        except Exception as e:
+            logger.error(
+                f"Ошибка получения перевода для пользователя {user_id}: {e}")
+            return 'rst'
+
     # === МЕТОДЫ ДЛЯ РАБОТЫ С ЗАКЛАДКАМИ ===
 
     async def get_bookmarks(self, user_id: int) -> List[Dict[str, Any]]:
@@ -121,7 +159,7 @@ class SupabaseManager:
             return []
 
     async def add_bookmark(self, user_id: int, book_id: int, chapter_start: int,
-                           chapter_end: int = None, display_text: str = None, 
+                           chapter_end: int = None, display_text: str = None,
                            verse_start: int = None, verse_end: int = None, note: str = None) -> bool:
         """Добавляет закладку"""
         try:
@@ -146,26 +184,27 @@ class SupabaseManager:
             return False
 
     async def remove_bookmark(self, user_id: int, book_id: int, chapter_start: int,
-                             chapter_end: int = None, verse_start: int = None, verse_end: int = None) -> bool:
+                              chapter_end: int = None, verse_start: int = None, verse_end: int = None) -> bool:
         """Удаляет закладку"""
         try:
-            query = self.client.table('bookmarks').delete().eq('user_id', user_id).eq('book_id', book_id).eq('chapter_start', chapter_start)
-            
+            query = self.client.table('bookmarks').delete().eq('user_id', user_id).eq(
+                'book_id', book_id).eq('chapter_start', chapter_start)
+
             if chapter_end is not None:
                 query = query.eq('chapter_end', chapter_end)
             else:
                 query = query.is_('chapter_end', 'null')
-                
+
             if verse_start is not None:
                 query = query.eq('verse_start', verse_start)
             else:
                 query = query.is_('verse_start', 'null')
-                
+
             if verse_end is not None:
                 query = query.eq('verse_end', verse_end)
             else:
                 query = query.is_('verse_end', 'null')
-            
+
             result = query.execute()
             return len(result.data) > 0
         except Exception as e:
@@ -174,26 +213,27 @@ class SupabaseManager:
             return False
 
     async def is_bookmarked(self, user_id: int, book_id: int, chapter_start: int,
-                           chapter_end: int = None, verse_start: int = None, verse_end: int = None) -> bool:
+                            chapter_end: int = None, verse_start: int = None, verse_end: int = None) -> bool:
         """Проверяет, есть ли закладка"""
         try:
-            query = self.client.table('bookmarks').select('id').eq('user_id', user_id).eq('book_id', book_id).eq('chapter_start', chapter_start)
-            
+            query = self.client.table('bookmarks').select('id').eq('user_id', user_id).eq(
+                'book_id', book_id).eq('chapter_start', chapter_start)
+
             if chapter_end is not None:
                 query = query.eq('chapter_end', chapter_end)
             else:
                 query = query.is_('chapter_end', 'null')
-                
+
             if verse_start is not None:
                 query = query.eq('verse_start', verse_start)
             else:
                 query = query.is_('verse_start', 'null')
-                
+
             if verse_end is not None:
                 query = query.eq('verse_end', verse_end)
             else:
                 query = query.is_('verse_end', 'null')
-            
+
             result = query.execute()
             return len(result.data) > 0
         except Exception as e:
@@ -786,4 +826,231 @@ class SupabaseManager:
 
         except Exception as e:
             logger.error(f"Ошибка удаления темы ID {topic_id}: {e}")
+            return False
+
+    # === МЕТОДЫ ДЛЯ РАБОТЫ С НАСТРОЙКАМИ ИИ ===
+
+    async def get_ai_setting(self, setting_key: str) -> Optional[Dict[str, Any]]:
+        """Получает настройку ИИ по ключу"""
+        try:
+            result = self.client.table('ai_settings').select(
+                '*').eq('setting_key', setting_key).execute()
+            return result.data[0] if result.data else None
+        except Exception as e:
+            logger.error(f"Ошибка получения настройки {setting_key}: {e}")
+            return None
+
+    async def set_ai_setting(self, setting_key: str, setting_value: str, setting_type: str = 'string', description: str = None) -> bool:
+        """Устанавливает настройку ИИ"""
+        try:
+            # Пытаемся обновить существующую настройку
+            result = self.client.table('ai_settings').upsert({
+                'setting_key': setting_key,
+                'setting_value': setting_value,
+                'setting_type': setting_type,
+                'description': description,
+                'updated_at': datetime.now().isoformat()
+            }).execute()
+            return bool(result.data)
+        except Exception as e:
+            logger.error(f"Ошибка установки настройки {setting_key}: {e}")
+            return False
+
+    async def get_all_ai_settings(self) -> List[Dict[str, Any]]:
+        """Получает все настройки ИИ"""
+        try:
+            result = self.client.table('ai_settings').select(
+                '*').order('setting_key').execute()
+            return result.data or []
+        except Exception as e:
+            logger.error(f"Ошибка получения всех настроек ИИ: {e}")
+            return []
+
+    # === МЕТОДЫ ДЛЯ РАБОТЫ С ПРЕМИУМ ЗАПРОСАМИ ===
+
+    async def get_user_premium_requests(self, user_id: int) -> int:
+        """Получает количество премиум запросов пользователя"""
+        try:
+            result = self.client.table('premium_requests').select(
+                'requests_count').eq('user_id', user_id).execute()
+            return result.data[0]['requests_count'] if result.data else 0
+        except Exception as e:
+            logger.error(
+                f"Ошибка получения премиум запросов для пользователя {user_id}: {e}")
+            return 0
+
+    async def add_premium_requests(self, user_id: int, count: int) -> bool:
+        """Добавляет премиум запросы пользователю"""
+        try:
+            # Получаем текущие данные
+            existing = self.client.table('premium_requests').select(
+                '*').eq('user_id', user_id).execute()
+
+            if existing.data:
+                # Обновляем существующую запись
+                current = existing.data[0]
+                new_count = current['requests_count'] + count
+                new_total = current['total_purchased'] + count
+
+                result = self.client.table('premium_requests').update({
+                    'requests_count': new_count,
+                    'total_purchased': new_total,
+                    'updated_at': datetime.now().isoformat()
+                }).eq('user_id', user_id).execute()
+            else:
+                # Создаем новую запись
+                result = self.client.table('premium_requests').insert({
+                    'user_id': user_id,
+                    'requests_count': count,
+                    'total_purchased': count,
+                    'total_used': 0
+                }).execute()
+
+            return bool(result.data)
+        except Exception as e:
+            logger.error(
+                f"Ошибка добавления премиум запросов пользователю {user_id}: {e}")
+            return False
+
+    async def use_premium_request(self, user_id: int) -> bool:
+        """Использует один премиум запрос"""
+        try:
+            # Получаем текущее количество
+            result = self.client.table('premium_requests').select(
+                '*').eq('user_id', user_id).execute()
+
+            if not result.data or result.data[0]['requests_count'] <= 0:
+                return False
+
+            current = result.data[0]
+            new_count = current['requests_count'] - 1
+            new_used = current['total_used'] + 1
+
+            # Обновляем запись
+            update_result = self.client.table('premium_requests').update({
+                'requests_count': new_count,
+                'total_used': new_used,
+                'updated_at': datetime.now().isoformat()
+            }).eq('user_id', user_id).execute()
+
+            return bool(update_result.data)
+        except Exception as e:
+            logger.error(
+                f"Ошибка использования премиум запроса пользователем {user_id}: {e}")
+            return False
+
+    async def get_premium_stats(self, user_id: int) -> Dict[str, Any]:
+        """Получает статистику премиум запросов пользователя"""
+        try:
+            result = self.client.table('premium_requests').select(
+                '*').eq('user_id', user_id).execute()
+
+            if result.data:
+                data = result.data[0]
+                return {
+                    'available': data['requests_count'],
+                    'total_purchased': data['total_purchased'],
+                    'total_used': data['total_used'],
+                    'created_at': data['created_at']
+                }
+            else:
+                return {
+                    'available': 0,
+                    'total_purchased': 0,
+                    'total_used': 0,
+                    'created_at': None
+                }
+        except Exception as e:
+            logger.error(
+                f"Ошибка получения статистики премиум запросов для пользователя {user_id}: {e}")
+            return {
+                'available': 0,
+                'total_purchased': 0,
+                'total_used': 0,
+                'created_at': None
+            }
+
+    # === МЕТОДЫ ДЛЯ РАБОТЫ С ПОКУПКАМИ ПРЕМИУМ ЗАПРОСОВ ===
+
+    async def create_premium_purchase(self, user_id: int, requests_count: int, amount_rub: int, payment_id: str) -> bool:
+        """Создает запись о покупке премиум запросов"""
+        try:
+            result = self.client.table('premium_purchases').insert({
+                'user_id': user_id,
+                'requests_count': requests_count,
+                'amount_rub': amount_rub,
+                'payment_id': payment_id,
+                'payment_status': 'pending'
+            }).execute()
+            return bool(result.data)
+        except Exception as e:
+            logger.error(f"Ошибка создания покупки премиум запросов: {e}")
+            return False
+
+    async def complete_premium_purchase(self, payment_id: str) -> bool:
+        """Завершает покупку премиум запросов"""
+        try:
+            # Получаем данные покупки
+            purchase_result = self.client.table('premium_purchases').select(
+                '*').eq('payment_id', payment_id).eq('payment_status', 'pending').execute()
+
+            if not purchase_result.data:
+                logger.warning(
+                    f"Покупка с payment_id {payment_id} не найдена или уже завершена")
+                return False
+
+            purchase = purchase_result.data[0]
+
+            # Обновляем статус покупки
+            status_result = self.client.table('premium_purchases').update({
+                'payment_status': 'completed',
+                'completed_at': datetime.now().isoformat()
+            }).eq('payment_id', payment_id).execute()
+
+            if status_result.data:
+                # Добавляем премиум запросы пользователю
+                success = await self.add_premium_requests(purchase['user_id'], purchase['requests_count'])
+
+                if not success:
+                    # Откатываем статус покупки если не удалось добавить запросы
+                    self.client.table('premium_purchases').update({
+                        'payment_status': 'failed'
+                    }).eq('payment_id', payment_id).execute()
+                    return False
+
+                return True
+
+            return False
+        except Exception as e:
+            logger.error(f"Ошибка завершения покупки премиум запросов: {e}")
+            return False
+
+    # === МЕТОДЫ ДЛЯ РАБОТЫ С ПОЖЕРТВОВАНИЯМИ ===
+
+    async def create_donation(self, user_id: int, amount_rub: int, payment_id: str, message: str = None) -> bool:
+        """Создает запись о пожертвовании"""
+        try:
+            result = self.client.table('donations').insert({
+                'user_id': user_id,
+                'amount_rub': amount_rub,
+                'payment_id': payment_id,
+                'message': message,
+                'payment_status': 'pending'
+            }).execute()
+            return bool(result.data)
+        except Exception as e:
+            logger.error(f"Ошибка создания пожертвования: {e}")
+            return False
+
+    async def complete_donation(self, payment_id: str) -> bool:
+        """Завершает пожертвование"""
+        try:
+            result = self.client.table('donations').update({
+                'payment_status': 'completed',
+                'completed_at': datetime.now().isoformat()
+            }).eq('payment_id', payment_id).eq('payment_status', 'pending').execute()
+
+            return bool(result.data)
+        except Exception as e:
+            logger.error(f"Ошибка завершения пожертвования: {e}")
             return False

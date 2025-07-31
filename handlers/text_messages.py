@@ -17,7 +17,8 @@ from keyboards.main import (
     create_book_keyboard,
     create_navigation_keyboard,
 )
-from utils.api_client import bible_api, ask_gpt_explain
+from utils.api_client import bible_api, ask_gpt_explain, ask_gpt_explain_premium
+from config.ai_settings import PREMIUM_MAX_TOKENS_SHORT, PREMIUM_MAX_TOKENS_FULL
 from utils.bible_data import bible_data
 from utils.text_utils import split_text
 from middleware.state import (
@@ -365,90 +366,27 @@ async def verse_reference(message: Message, state: FSMContext):
                         has_previous, has_next, is_bookmarked, extra_buttons)
                 )
             else:
-                # Для стиха — как было
-                if book_id:
-                    buttons.append([
-                        InlineKeyboardButton(
-                            text="Открыть всю главу",
-                            callback_data=f"open_chapter_{book_abbr}_{chapter}"
-                        )
-                    ])
-                # Кнопка толкования Лопухина (проверяем глобальную настройку)
-                from config.settings import ENABLE_LOPUKHIN_COMMENTARY
-                if ENABLE_LOPUKHIN_COMMENTARY and en_book:
-                    commentary = None
-                    if verse:
-                        commentary = lopukhin_commentary.get_commentary(
-                            en_book, chapter, int(verse))
-                    if not commentary:
-                        commentary = lopukhin_commentary.get_commentary(
-                            en_book, chapter, 0)
-                    if commentary:
-                        # Проверяем сохраненное толкование Лопухина
-                        saved_lopukhin_commentary = None
-                        if book_id:
-                            try:
-                                from database.universal_manager import universal_db_manager
-                                verse_start = int(verse) if verse else 0
-                                saved_lopukhin_commentary = await universal_db_manager.get_saved_commentary(
-                                    message.from_user.id, book_id, chapter, chapter, verse_start, verse_start, "lopukhin"
-                                )
-                            except:
-                                pass
+                # Для стиха - используем умную функцию создания кнопок
+                verse_start = int(verse) if verse else None
+                verse_end = None
 
-                        lopukhin_text = "📚 Обновить толкование Лопухина" if saved_lopukhin_commentary else "Толкование проф. Лопухина"
-                        cb_data = f"open_commentary_{en_book}_{chapter}_{verse}"
-                        buttons.append([
-                            InlineKeyboardButton(
-                                text=lopukhin_text,
-                                callback_data=cb_data
-                            )
-                        ])
-                if ENABLE_GPT_EXPLAIN:
-                    # Проверяем сохраненное ИИ толкование
-                    saved_ai_commentary = None
-                    if book_id:
-                        try:
-                            from database.universal_manager import universal_db_manager
-                            verse_start = int(verse) if verse else 0
-                            saved_ai_commentary = await universal_db_manager.get_saved_commentary(
-                                message.from_user.id, book_id, chapter, chapter, verse_start, verse_start, "ai"
-                            )
-                        except:
-                            pass
-
-                    ai_text = "🔄 Обновить толкование ИИ" if saved_ai_commentary else "🤖 Разбор от ИИ"
-                    cb_data = f"gpt_explain_{en_book}_{chapter}_{verse}"
-                    buttons.append([
-                        InlineKeyboardButton(
-                            text=ai_text,
-                            callback_data=cb_data
-                        )
-                    ])
-
-                # Добавляем кнопку закладки для стиха
-                if book_id and verse:
-                    from utils.bookmark_utils import create_bookmark_button
-                    from handlers.bookmark_handlers import check_if_bookmarked
-                    
-                    verse_num = int(verse)
-                    # Проверяем, добавлен ли стих в закладки
-                    is_verse_bookmarked = await check_if_bookmarked(
-                        message.from_user.id, book_id, chapter, None, verse_num, None
+                # Парсим диапазон стихов если есть
+                if verse and '-' in message.text:
+                    match_range = re.match(
+                        r'^([а-яА-ЯёЁ0-9\s]+)\s+(\d+):(\d+)-(\d+)$',
+                        message.text.strip(), re.IGNORECASE
                     )
-                    
-                    bookmark_button = create_bookmark_button(
-                        book_id=book_id,
-                        chapter_start=chapter,
-                        verse_start=verse_num,
-                        is_bookmarked=is_verse_bookmarked
-                    )
-                    
-                    buttons.append([bookmark_button])
-                
-                if buttons:
-                    kb = InlineKeyboardMarkup(inline_keyboard=buttons)
-                    await message.answer("Выберите действие:", reply_markup=kb)
+                    if match_range:
+                        verse_end = int(match_range.group(4))
+
+                from utils.bible_data import create_chapter_action_buttons
+                extra_buttons = await create_chapter_action_buttons(
+                    book_id, chapter, en_book, user_id=message.from_user.id,
+                    verse_start=verse_start, verse_end=verse_end
+                )
+
+                if extra_buttons:
+                    await message.answer("Выберите действие:", reply_markup=InlineKeyboardMarkup(inline_keyboard=extra_buttons))
     except Exception as e:
         logger.error(f"Ошибка в обработке ссылки на стих: {e}", exc_info=True)
         await message.answer("Не удалось найти указанный отрывок. Проверьте правильность ссылки.")
@@ -564,7 +502,7 @@ if ENABLE_WORD_SEARCH:
 def create_topics_keyboard(topics: list) -> list:
     """Создает клавиатуру с темами, используя умную сортировку по длине"""
     buttons = []
-    
+
     # Добавляем заметную кнопку ИИ помощника в начало
     buttons.append([
         InlineKeyboardButton(
@@ -572,12 +510,12 @@ def create_topics_keyboard(topics: list) -> list:
             callback_data="ai_assistant"
         )
     ])
-    
+
     # Формируем inline-клавиатуру с умной сортировкой по длине текста
     row = []
     for i, topic in enumerate(topics):
         button = InlineKeyboardButton(text=topic, callback_data=f"topic_{i}")
-        
+
         # Если название темы длинное (больше 18 символов), размещаем на отдельной строке
         if len(topic) > 18:
             # Если есть незавершенный ряд, добавляем его
@@ -592,11 +530,11 @@ def create_topics_keyboard(topics: list) -> list:
             if len(row) == 2:
                 buttons.append(row)
                 row = []
-    
+
     # Добавляем оставшиеся кнопки
     if row:
         buttons.append(row)
-    
+
     # Дублируем кнопку ИИ помощника снизу
     buttons.append([
         InlineKeyboardButton(
@@ -604,7 +542,7 @@ def create_topics_keyboard(topics: list) -> list:
             callback_data="ai_assistant"
         )
     ])
-    
+
     # Добавляем кнопку возврата в меню
     buttons.append([
         InlineKeyboardButton(
@@ -612,8 +550,9 @@ def create_topics_keyboard(topics: list) -> list:
             callback_data="back_to_menu"
         )
     ])
-    
+
     return buttons
+
 
 @router.callback_query(F.data == "back_to_topics")
 async def back_to_topics(callback: CallbackQuery):
@@ -621,18 +560,19 @@ async def back_to_topics(callback: CallbackQuery):
     from utils.topics import get_topics_list_async
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     topics = await get_topics_list_async()
-    
+
     buttons = create_topics_keyboard(topics)
     kb = InlineKeyboardMarkup(inline_keyboard=buttons)
     await callback.message.edit_text("Выберите тему или воспользуйтесь ИИ помощником:", reply_markup=kb)
     await callback.answer()
+
 
 @router.message(F.text == "🎯 Темы")
 async def show_topics_menu(message: Message):
     from utils.topics import get_topics_list_async
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     topics = await get_topics_list_async()
-    
+
     buttons = create_topics_keyboard(topics)
     kb = InlineKeyboardMarkup(inline_keyboard=buttons)
     await message.answer("Выберите тему или воспользуйтесь ИИ помощником:", reply_markup=kb)
@@ -710,7 +650,8 @@ async def topic_verse_callback(callback: CallbackQuery, state: FSMContext):
             pass
     # Добавить только inline-кнопки под стихом
     import re
-    match = re.match(r"([А-Яа-яёЁ0-9\s]+)\s(\d+)(?::(\d+)(?:-(\d+))?)?", verse_ref)
+    match = re.match(
+        r"([А-Яа-яёЁ0-9\s]+)\s(\d+)(?::(\d+)(?:-(\d+))?)?", verse_ref)
     if match:
         book_raw = match.group(1).strip().lower()
         chapter = int(match.group(2))
@@ -737,7 +678,7 @@ async def topic_verse_callback(callback: CallbackQuery, state: FSMContext):
 
         buttons = []
         action_row = []
-        
+
         # Кнопка "Открыть всю главу"
         if book_id:
             action_row.append(
@@ -763,8 +704,10 @@ async def topic_verse_callback(callback: CallbackQuery, state: FSMContext):
                 if book_id:
                     try:
                         from database.universal_manager import universal_db_manager
-                        verse_start_num = int(verse_start) if verse_start else 0
-                        verse_end_num = int(verse_end) if verse_end else verse_start_num
+                        verse_start_num = int(
+                            verse_start) if verse_start else 0
+                        verse_end_num = int(
+                            verse_end) if verse_end else verse_start_num
                         saved_lopukhin_commentary = await universal_db_manager.get_saved_commentary(
                             callback.from_user.id, book_id, chapter, chapter, verse_start_num, verse_end_num, "lopukhin"
                         )
@@ -781,7 +724,7 @@ async def topic_verse_callback(callback: CallbackQuery, state: FSMContext):
                     verse_callback = verse_start
                 else:
                     verse_callback = "0"
-                    
+
                 cb_data = f"open_commentary_{en_book}_{chapter}_{verse_callback}"
                 action_row.append(
                     InlineKeyboardButton(
@@ -797,7 +740,8 @@ async def topic_verse_callback(callback: CallbackQuery, state: FSMContext):
             try:
                 from database.universal_manager import universal_db_manager
                 verse_start_num = int(verse_start) if verse_start else 0
-                verse_end_num = int(verse_end) if verse_end else verse_start_num
+                verse_end_num = int(
+                    verse_end) if verse_end else verse_start_num
                 saved_commentary = await universal_db_manager.get_saved_commentary(
                     callback.from_user.id, book_id, chapter, chapter, verse_start_num, verse_end_num, "ai"
                 )
@@ -814,7 +758,7 @@ async def topic_verse_callback(callback: CallbackQuery, state: FSMContext):
                 verse_callback = verse_start
             else:
                 verse_callback = "0"
-                
+
             cb_data = f"gpt_explain_{en_book}_{chapter}_{verse_callback}"
             action_row.append(
                 InlineKeyboardButton(
@@ -826,20 +770,21 @@ async def topic_verse_callback(callback: CallbackQuery, state: FSMContext):
         # Добавляем ряд кнопок действий (если есть)
         if action_row:
             buttons.append(action_row)
-        
+
         # Добавляем кнопку закладки для стиха/отрывка
         if book_id:
             from utils.bookmark_utils import create_bookmark_button
             from handlers.bookmark_handlers import check_if_bookmarked
-            
+
             verse_start_num = int(verse_start) if verse_start else None
-            verse_end_num = int(verse_end) if verse_end and verse_end != verse_start else None
-            
+            verse_end_num = int(
+                verse_end) if verse_end and verse_end != verse_start else None
+
             # Проверяем, добавлен ли стих в закладки
             is_bookmarked = await check_if_bookmarked(
                 callback.from_user.id, book_id, chapter, None, verse_start_num, verse_end_num
             )
-            
+
             bookmark_button = create_bookmark_button(
                 book_id=book_id,
                 chapter_start=chapter,
@@ -847,9 +792,9 @@ async def topic_verse_callback(callback: CallbackQuery, state: FSMContext):
                 verse_end=verse_end_num,
                 is_bookmarked=is_bookmarked
             )
-            
+
             buttons.append([bookmark_button])
-        
+
         # Добавляем кнопку "Назад к темам" для готовых тем
         buttons.append([
             InlineKeyboardButton(
@@ -885,7 +830,13 @@ async def open_commentary_callback(callback: CallbackQuery, state: FSMContext):
     if not commentary:
         commentary = lopukhin_commentary.get_commentary(book, chapter, 0)
     if commentary:
-        formatted, opts = format_ai_or_commentary(commentary)
+        # Очищаем комментарий от HTML тегов на всякий случай
+        import re
+        cleaned_commentary = re.sub(
+            r'<[^>]*>', '', commentary)  # Удаляем все HTML теги
+        cleaned_commentary = cleaned_commentary.strip()
+
+        formatted, opts = format_ai_or_commentary(cleaned_commentary)
 
         # Получаем информацию о пользователе и книге для кнопок сохранения
         user_id = callback.from_user.id if hasattr(
@@ -1118,7 +1069,12 @@ async def show_commentary_page(callback, book, chapter, all_comments, idx, state
     markup = InlineKeyboardMarkup(inline_keyboard=keyboard_rows)
 
     # Отправляем или редактируем толкование с учётом настроек форматирования
-    formatted, opts = format_ai_or_commentary(text, title)
+    # Очищаем текст от HTML тегов на всякий случай
+    import re
+    cleaned_text = re.sub(r'<[^>]*>', '', text)  # Удаляем все HTML теги
+    cleaned_text = cleaned_text.strip()
+
+    formatted, opts = format_ai_or_commentary(cleaned_text, title)
 
     if edit_message:
         # Редактируем существующее сообщение (для навигации по страницам)
@@ -1183,6 +1139,26 @@ async def show_commentary_page(callback, book, chapter, all_comments, idx, state
 @router.callback_query(F.data.regexp(r'^gpt_explain_([A-Za-z0-9]+)_(\d+)_(.+)$'))
 async def gpt_explain_callback(callback: CallbackQuery, state: FSMContext = None):
     import re
+
+    # Проверяем квоту ИИ перед выполнением запроса
+    try:
+        from services.ai_quota_manager import ai_quota_manager
+        can_use_ai, ai_type = await ai_quota_manager.check_and_increment_usage(callback.from_user.id)
+
+        if not can_use_ai:
+            quota_info = await ai_quota_manager.get_user_quota_info(callback.from_user.id)
+            total_available = quota_info.get('total_available', 0)
+            await callback.answer(
+                f"❌ Все лимиты ИИ исчерпаны (доступно: {total_available}). "
+                f"Дневные лимиты обновятся через {quota_info['hours_until_reset']} ч. "
+                f"Или купите премиум запросы в настройках.",
+                show_alert=True
+            )
+            return
+    except Exception as e:
+        logger.error(f"Ошибка проверки квоты ИИ: {e}")
+        ai_type = 'regular'  # По умолчанию используем обычный ИИ
+
     # Сразу отвечаем на callback чтобы избежать timeout
     await callback.answer("🤖 Генерирую AI-разбор...")
 
@@ -1225,7 +1201,7 @@ async def gpt_explain_callback(callback: CallbackQuery, state: FSMContext = None
     book = match.group(1)
     chapter = int(match.group(2))
     verse_part = match.group(3)
-    
+
     # Парсим часть со стихом (может быть "0", "5", "5-10")
     if verse_part == "0":
         verse = 0
@@ -1252,7 +1228,7 @@ async def gpt_explain_callback(callback: CallbackQuery, state: FSMContext = None
     from utils.bible_data import bible_data
     ru_book = bible_data.book_synonyms.get(book.lower(), book)
     book_id = bible_data.get_book_id(ru_book)
-    
+
     # Формируем ссылку в зависимости от типа запроса
     if verse == 0:
         reference = f"{ru_book} {chapter}"
@@ -1277,15 +1253,19 @@ async def gpt_explain_callback(callback: CallbackQuery, state: FSMContext = None
     else:
         from handlers.verse_reference import get_verse_by_reference
         st = state if state is not None else None
-        
+
         # Отладочная информация для диагностики проблемы
-        logger.info(f"DEBUG: Обработка ссылки '{reference}' для пользователя {user_id}")
-        logger.info(f"DEBUG: book='{book}', ru_book='{ru_book}', book_id={book_id}")
-        logger.info(f"DEBUG: chapter={chapter}, verse={verse}, verse_end={verse_end}")
-        
+        logger.info(
+            f"DEBUG: Обработка ссылки '{reference}' для пользователя {user_id}")
+        logger.info(
+            f"DEBUG: book='{book}', ru_book='{ru_book}', book_id={book_id}")
+        logger.info(
+            f"DEBUG: chapter={chapter}, verse={verse}, verse_end={verse_end}")
+
         try:
             text, _ = await get_verse_by_reference(st, reference)
-            logger.info(f"DEBUG: get_verse_by_reference успешно вернул текст длиной {len(text) if text else 0} символов")
+            logger.info(
+                f"DEBUG: get_verse_by_reference успешно вернул текст длиной {len(text) if text else 0} символов")
         except Exception as e:
             logger.error(f"DEBUG: Ошибка в get_verse_by_reference: {e}")
             text, _ = await get_verse_by_reference(None, reference)
@@ -1295,27 +1275,82 @@ async def gpt_explain_callback(callback: CallbackQuery, state: FSMContext = None
         await callback.answer()
         return
     # Формируем запрос к ИИ
-    prompt = f"Объясни смысл следующего текста:\n\n{text}\n\nОтветь кратко и по существу."
-    try:
+    # Формируем запрос в зависимости от типа ИИ
+    if ai_type == 'premium':
+        prompt = f"Проанализируйте следующий библейский текст:\n\n{text}\n\nДайте подробный богословский анализ с историческим контекстом."
+        max_tokens = PREMIUM_MAX_TOKENS_FULL
+        title = "⭐ Премиум разбор от ИИ"
+        response = await ask_gpt_explain_premium(prompt, max_tokens)
+    else:
+        prompt = f"Объясни смысл следующего текста:\n\n{text}\n\nОтветь кратко и по существу."
         response = await ask_gpt_explain(prompt)
-        formatted, opts = format_ai_or_commentary(
-            response, title="🤖 Разбор от ИИ")
+        title = "🤖 Разбор от ИИ"
 
-        # Проверяем, есть ли уже сохраненное толкование
+    try:
+        # Очищаем ответ ИИ от HTML тегов которые могут нарушить структуру
+        import re
+        # Удаляем все HTML теги
+        cleaned_response = re.sub(r'<[^>]*>', '', response)
+        cleaned_response = cleaned_response.strip()
+
+        formatted, opts = format_ai_or_commentary(
+            cleaned_response, title=title)
+
+        # Проверяем, есть ли уже сохраненное толкование (ОПТИМИЗИРОВАННО)
         from database.universal_manager import universal_db_manager as db_manager
         verse_start_num = verse if verse != 0 else None
         verse_end_num = verse_end if verse_end is not None else verse_start_num
-        saved_commentary = await db_manager.get_saved_commentary(
-            user_id, book_id, chapter, None, verse_start_num, verse_end_num, "ai")
 
-        # Разбиваем на части и отправляем
+        # ОПТИМИЗАЦИЯ: Выполняем только нужные проверки параллельно
+        import asyncio
+        from handlers.bookmark_handlers import check_if_bookmarked
+        from config.settings import ENABLE_LOPUKHIN_COMMENTARY
+
+        tasks = [
+            db_manager.get_saved_commentary(
+                user_id, book_id, chapter, None, verse_start_num, verse_end_num, "ai"),
+            check_if_bookmarked(
+                user_id, book_id, chapter, verse_start=verse_start_num, verse_end=verse_end_num)
+        ]
+
+        # Добавляем проверку толкований Лопухина только если они включены
+        lopukhin_task_index = None
+        if ENABLE_LOPUKHIN_COMMENTARY:
+            lopukhin_task_index = len(tasks)
+            tasks.append(db_manager.get_saved_commentary(
+                user_id, book_id, chapter, None, verse_start_num, verse_end_num, "lopukhin"))
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        saved_commentary = results[0] if not isinstance(
+            results[0], Exception) else None
+        is_bookmarked = results[1] if not isinstance(
+            results[1], Exception) else False
+
+        # Получаем результат толкований Лопухина только если запрос был сделан
+        if lopukhin_task_index is not None:
+            saved_lopukhin_commentary = results[lopukhin_task_index] if not isinstance(
+                results[lopukhin_task_index], Exception) else None
+        else:
+            saved_lopukhin_commentary = None
+
+        # Разбиваем на части с улучшенной функцией split_text
         text_parts = list(split_text(formatted))
+
         for idx, part in enumerate(text_parts):
             if idx == len(text_parts) - 1:  # Последняя часть - добавляем кнопки
-                # Создаем кнопки без кнопки AI (exclude_ai=True)
+                # Создаем кнопки без кнопки AI (exclude_ai=True) с учетом стихов
                 from utils.bible_data import create_chapter_action_buttons
+
+                # Передаем кэшированные данные чтобы избежать повторных запросов
+                cached_data = {
+                    'ai_commentary': saved_commentary,
+                    'lopukhin_commentary': saved_lopukhin_commentary,
+                    'is_bookmarked': is_bookmarked
+                }
+
                 action_buttons = await create_chapter_action_buttons(
-                    book_id, chapter, book, exclude_ai=True, user_id=callback.from_user.id)
+                    book_id, chapter, book, exclude_ai=True, user_id=callback.from_user.id,
+                    verse_start=verse_start_num, verse_end=verse_end_num, cached_data=cached_data)
 
                 # Добавляем кнопку для сохранения толкования
                 save_buttons = []
@@ -1384,26 +1419,8 @@ async def gpt_explain_callback(callback: CallbackQuery, state: FSMContext = None
                         # Если не найдено сокращение, только action_buttons + save_buttons
                         all_buttons = action_buttons + save_buttons
 
-
-
-                    # Добавляем кнопку закладки для стиха
-                    from utils.bookmark_utils import create_bookmark_button
-                    from handlers.bookmark_handlers import check_if_bookmarked
-                    
-                    # Проверяем, добавлен ли стих в закладки
-                    is_verse_bookmarked = await check_if_bookmarked(
-                        user_id, book_id, chapter, None, verse_start_num, verse_end_num
-                    )
-                    
-                    bookmark_button = create_bookmark_button(
-                        book_id=book_id,
-                        chapter_start=chapter,
-                        verse_start=verse_start_num,
-                        verse_end=verse_end_num,
-                        is_bookmarked=is_verse_bookmarked
-                    )
-                    
-                    all_buttons.append([bookmark_button])
+                    # Кнопка закладки уже добавлена в create_chapter_action_buttons
+                    # Убираем дублирование
 
                     # Добавляем кнопку возврата в зависимости от контекста
                     if state:
@@ -1433,7 +1450,7 @@ async def gpt_explain_callback(callback: CallbackQuery, state: FSMContext = None
                     else:
                         msg = await callback.message.answer(part, **opts)
 
-                # Возвращаем кнопку "🤖 Разбор от ИИ" обратно после загрузки
+                # Возвращаем кнопку "🤖 Разбор от ИИ" обратно после загрузки (только для последней части)
                 try:
                     current_markup = callback.message.reply_markup
                     if current_markup and current_markup.inline_keyboard:
@@ -1458,7 +1475,7 @@ async def gpt_explain_callback(callback: CallbackQuery, state: FSMContext = None
                 except Exception as e:
                     logger.error(f"Ошибка возврата кнопки AI: {e}")
 
-                # Сохраняем данные толкования в состоянии для возможного сохранения
+                # Сохраняем данные толкования в состоянии для возможного сохранения (только для последней части)
                 if state:
                     await state.update_data(
                         last_ai_commentary=response,
@@ -1468,14 +1485,13 @@ async def gpt_explain_callback(callback: CallbackQuery, state: FSMContext = None
                         last_ai_chapter_end=None,  # Всегда одна глава для тем
                         last_ai_verse=verse,
                         # Для диапазонов стихов используем verse_end_num
-                        last_ai_verse_end=verse_end_num if verse_end_num is not None else (verse if verse != 0 else None),
+                        last_ai_verse_end=verse_end_num if verse_end_num is not None else (
+                            verse if verse != 0 else None),
                         last_topic_ai_msg_id=msg.message_id
                     )
             else:
+                # Первые части без кнопок
                 msg = await callback.message.answer(part, **opts)
-
-            if state:
-                await state.update_data(last_topic_ai_msg_id=msg.message_id)
     except Exception as e:
         logger.error(f"Ошибка при обращении к ИИ: {e}")
         await callback.message.answer("Произошла ошибка при обращении к ИИ. Попробуйте позже.")
@@ -1658,8 +1674,10 @@ def format_ai_or_commentary(text, title=None):
     Форматирует текст для вывода в Telegram как цитата.
     title: если задан, будет выделен жирным
     """
-    # Возвращаем к формату цитат как было раньше
-    result = f"<blockquote>{text}</blockquote>"
+    from utils.text_utils import format_as_quote
+
+    # Используем функцию из text_utils.py для форматирования
+    result = format_as_quote(text)
 
     # Добавляем заголовок если есть
     if title:
@@ -1989,26 +2007,27 @@ async def reading_plan_text(callback: CallbackQuery, state: FSMContext):
                 callback_data=f"readingai_{plan_id}_{day}_{part_idx}"
             )]
         ]
-        
+
         # Добавляем кнопку закладки для отрывка из плана чтения
         from handlers.verse_reference import parse_reference
-        
+
         # Используем полноценный парсер ссылок, который поддерживает все форматы
-        book_name, chapter_or_range, verse_or_range = parse_reference(reading_part)
-        
+        book_name, chapter_or_range, verse_or_range = parse_reference(
+            reading_part)
+
         if book_name:
             book_id = bible_data.get_book_id(book_name)
-            
+
             if book_id:
                 from utils.bookmark_utils import create_bookmark_button
                 from handlers.bookmark_handlers import check_if_bookmarked
-                
+
                 # Определяем тип ссылки и параметры для закладки
                 chapter_start = None
                 chapter_end = None
                 verse_start = None
                 verse_end = None
-                
+
                 if chapter_or_range == "chapter_range":
                     # Диапазон глав: Быт 1-3
                     chapter_start, chapter_end = verse_or_range
@@ -2032,14 +2051,15 @@ async def reading_plan_text(callback: CallbackQuery, state: FSMContext):
                     chapter_start = chapter_or_range
                 else:
                     # Неизвестный формат, используем как главу
-                    chapter_start = chapter_or_range if isinstance(chapter_or_range, int) else None
-                
+                    chapter_start = chapter_or_range if isinstance(
+                        chapter_or_range, int) else None
+
                 if chapter_start:
                     # Проверяем, добавлен ли отрывок в закладки
                     is_bookmarked = await check_if_bookmarked(
                         user_id, book_id, chapter_start, chapter_end, verse_start, verse_end
                     )
-                    
+
                     bookmark_button = create_bookmark_button(
                         book_id=book_id,
                         chapter_start=chapter_start,
@@ -2048,9 +2068,9 @@ async def reading_plan_text(callback: CallbackQuery, state: FSMContext):
                         verse_end=verse_end,
                         is_bookmarked=is_bookmarked
                     )
-                    
+
                     action_buttons.append([bookmark_button])
-        
+
         # Кнопка возврата
         action_buttons.append([
             InlineKeyboardButton(
@@ -2263,7 +2283,10 @@ async def reading_ai_callback(callback: CallbackQuery, state: FSMContext):
 
     # --- AI LIMIT CHECK ---
     user_id = callback.from_user.id
-    if not await ai_check_and_increment_db(user_id):
+    from services.ai_quota_manager import ai_quota_manager
+    can_use_ai, ai_type = await ai_quota_manager.check_and_increment_usage(user_id)
+
+    if not can_use_ai:
         await callback.message.answer("Вы исчерпали лимит ИИ-запросов на сегодня.")
         return
 
@@ -2301,13 +2324,26 @@ async def reading_ai_callback(callback: CallbackQuery, state: FSMContext):
 
     reading_part = reading_parts[part_idx]
 
-    # Формируем запрос к ИИ напрямую с названием части
-    prompt = f"Объясни смысл и основные темы следующего библейского отрывка: {reading_part}\n\nОтветь кратко и по существу, расскажи о ключевых моментах и духовном значении."
-
+    # Формируем запрос к ИИ в зависимости от типа
     try:
-        response = await ask_gpt_explain(prompt)
+        if ai_type == 'premium':
+            prompt = f"Объясните смысл и основные темы следующего библейского отрывка: {reading_part}\n\nДайте подробный богословский анализ с историческим контекстом и духовным значением."
+            max_tokens = PREMIUM_MAX_TOKENS_FULL
+            title = "⭐ Премиум разбор от ИИ"
+            response = await ask_gpt_explain_premium(prompt, max_tokens)
+        else:
+            prompt = f"Объясни смысл и основные темы следующего библейского отрывка: {reading_part}\n\nОтветь кратко и по существу, расскажи о ключевых моментах и духовном значении."
+            response = await ask_gpt_explain(prompt)
+            title = "🤖 Разбор от ИИ"
+
+        # Очищаем ответ ИИ от HTML тегов которые могут нарушить структуру
+        import re
+        # Удаляем все HTML теги
+        cleaned_response = re.sub(r'<[^>]*>', '', response)
+        cleaned_response = cleaned_response.strip()
+
         formatted, opts = format_ai_or_commentary(
-            response, title="🤖 Разбор от ИИ")
+            cleaned_response, title=title)
 
         # Парсим reading_part для извлечения информации о книге и главах для сохранения
         from utils.bible_data import bible_data

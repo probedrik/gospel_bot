@@ -3,6 +3,7 @@
 """
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from config.settings import ADMIN_USER_ID
+from config.ai_settings import PREMIUM_AI_PACKAGE_PRICE, PREMIUM_AI_PACKAGE_REQUESTS
 
 
 def create_settings_keyboard(user_id: int = None) -> InlineKeyboardMarkup:
@@ -22,12 +23,18 @@ def create_settings_keyboard(user_id: int = None) -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(
-                text="❓ Помощь",
+                text="📖 Справка",
                 callback_data="settings_help"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="🪙 Помочь проекту",
+                callback_data="settings_donation"
             )
         ]
     ]
-    
+
     # Добавляем админские настройки для администратора
     if user_id and user_id == ADMIN_USER_ID:
         buttons.append([
@@ -36,14 +43,14 @@ def create_settings_keyboard(user_id: int = None) -> InlineKeyboardMarkup:
                 callback_data="settings_admin"
             )
         ])
-    
+
     buttons.append([
         InlineKeyboardButton(
             text="⬅️ Назад в главное меню",
             callback_data="back_to_main"
         )
     ])
-    
+
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
@@ -70,12 +77,18 @@ def create_admin_settings_keyboard() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(
+                text="⚙️ Лимиты и цены ИИ",
+                callback_data="admin_ai_limits"
+            )
+        ],
+        [
+            InlineKeyboardButton(
                 text="⬅️ Назад к настройкам",
                 callback_data="back_to_settings"
             )
         ]
     ]
-    
+
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
@@ -96,12 +109,174 @@ def create_ai_limits_keyboard() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(
+                text="⭐ Премиум доступ к ИИ",
+                callback_data="ai_premium_access"
+            )
+        ],
+        [
+            InlineKeyboardButton(
                 text="⬅️ Назад к настройкам",
                 callback_data="back_to_settings"
             )
         ]
     ]
-    
+
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def create_premium_ai_keyboard() -> InlineKeyboardMarkup:
+    """Создает клавиатуру премиум доступа к ИИ"""
+    # Используем значения по умолчанию из ai_settings.py для кнопки
+    # Реальные значения будут подставляться в тексте через динамические функции
+    buttons = [
+        [
+            InlineKeyboardButton(
+                text=f"⭐ Купить +{PREMIUM_AI_PACKAGE_REQUESTS} запросов ({PREMIUM_AI_PACKAGE_PRICE}₽)",
+                callback_data="buy_premium_ai_50"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="📊 Мои премиум запросы",
+                callback_data="my_premium_requests"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="ℹ️ Как работает премиум",
+                callback_data="premium_ai_info"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="⬅️ Назад к лимитам ИИ",
+                callback_data="settings_ai_limits"
+            )
+        ]
+    ]
+
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def create_donation_keyboard() -> InlineKeyboardMarkup:
+    """Создает клавиатуру пожертвований"""
+    buttons = [
+        [
+            InlineKeyboardButton(
+                text="🪙 50₽",
+                callback_data="donate_50"
+            ),
+            InlineKeyboardButton(
+                text="🪙 100₽",
+                callback_data="donate_100"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="🪙 500₽",
+                callback_data="donate_500"
+            ),
+            InlineKeyboardButton(
+                text="💰 Ввести сумму",
+                callback_data="donate_custom"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="ℹ️ О пожертвованиях",
+                callback_data="donation_info"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="⬅️ Назад к настройкам",
+                callback_data="back_to_settings"
+            )
+        ]
+    ]
+
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def create_admin_ai_limits_keyboard() -> InlineKeyboardMarkup:
+    """Создает клавиатуру управления лимитами и ценами ИИ"""
+    buttons = [
+        [
+            InlineKeyboardButton(
+                text="📊 Изменить дневной лимит",
+                callback_data="admin_change_daily_limit"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="💰 Изменить цену пакета",
+                callback_data="admin_change_package_price"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="📦 Изменить размер пакета",
+                callback_data="admin_change_package_size"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="🤖 Режим ИИ для админа",
+                callback_data="admin_toggle_ai_mode"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="👥 Бесплатный премиум доступ",
+                callback_data="admin_free_premium_users"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="🔄 Сбросить к умолчаниям",
+                callback_data="admin_reset_ai_settings"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="⬅️ Назад к /admin панели",
+                callback_data="admin_panel_refresh"
+            )
+        ]
+    ]
+
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def create_free_premium_users_keyboard() -> InlineKeyboardMarkup:
+    """Создает клавиатуру управления бесплатными премиум пользователями"""
+    buttons = [
+        [
+            InlineKeyboardButton(
+                text="➕ Добавить пользователя",
+                callback_data="admin_add_free_premium_user"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="➖ Удалить пользователя",
+                callback_data="admin_remove_free_premium_user"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="📋 Показать список",
+                callback_data="admin_show_free_premium_users"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="⬅️ Назад к настройкам ИИ",
+                callback_data="admin_ai_limits"
+            )
+        ]
+    ]
+
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
@@ -165,5 +340,5 @@ def create_button_management_keyboard() -> InlineKeyboardMarkup:
             )
         ]
     ]
-    
+
     return InlineKeyboardMarkup(inline_keyboard=buttons)

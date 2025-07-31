@@ -56,6 +56,9 @@ class UniversalDatabaseManager:
             await self.manager.initialize()
         # SQLite инициализируется автоматически в конструкторе
 
+        # Создаем таблицу ai_settings
+        await self.create_ai_settings_table()
+
     async def close(self):
         """Закрывает соединения с базой данных"""
         if (self.is_postgres or self.is_supabase) and hasattr(self.manager, 'close'):
@@ -78,14 +81,22 @@ class UniversalDatabaseManager:
         """Обновляет время последней активности пользователя"""
         return await self.manager.update_user_activity(user_id)
 
+    async def update_user_response_length(self, user_id: int, response_length: str):
+        """Обновляет настройку длины ответа ИИ для пользователя"""
+        return await self.manager.update_user_response_length(user_id, response_length)
+
+    async def get_user_response_length(self, user_id: int) -> str:
+        """Получает настройку длины ответа ИИ для пользователя"""
+        return await self.manager.get_user_response_length(user_id)
+
     # Методы для работы с закладками
     async def get_bookmarks(self, user_id: int):
         """Получает закладки пользователя"""
         return await self.manager.get_bookmarks(user_id)
 
-    async def add_bookmark(self, user_id: int, book_id: int, chapter_start: int, 
-                          display_text: str, chapter_end: int = None, 
-                          verse_start: int = None, verse_end: int = None, note: str = None):
+    async def add_bookmark(self, user_id: int, book_id: int, chapter_start: int,
+                           display_text: str, chapter_end: int = None,
+                           verse_start: int = None, verse_end: int = None, note: str = None):
         """Добавляет закладку с поддержкой диапазонов глав и стихов"""
         if self.is_postgres or self.is_supabase:
             return await self.manager.add_bookmark(
@@ -100,17 +111,17 @@ class UniversalDatabaseManager:
             )
         else:
             return await self.manager.add_bookmark(
-                user_id, book_id, chapter_start, chapter_end, 
+                user_id, book_id, chapter_start, chapter_end,
                 verse_start, verse_end, display_text, note
             )
 
-    async def remove_bookmark(self, user_id: int, book_id: int, chapter_start: int, 
-                             chapter_end: int = None, verse_start: int = None, verse_end: int = None):
+    async def remove_bookmark(self, user_id: int, book_id: int, chapter_start: int,
+                              chapter_end: int = None, verse_start: int = None, verse_end: int = None):
         """Удаляет закладку"""
         return await self.manager.remove_bookmark(user_id, book_id, chapter_start, chapter_end, verse_start, verse_end)
 
-    async def is_bookmarked(self, user_id: int, book_id: int, chapter_start: int, 
-                           chapter_end: int = None, verse_start: int = None, verse_end: int = None):
+    async def is_bookmarked(self, user_id: int, book_id: int, chapter_start: int,
+                            chapter_end: int = None, verse_start: int = None, verse_end: int = None):
         """Проверяет, есть ли закладка"""
         return await self.manager.is_bookmarked(user_id, book_id, chapter_start, chapter_end, verse_start, verse_end)
 
@@ -272,7 +283,7 @@ class UniversalDatabaseManager:
                     if commentary.get('id') == commentary_id:
                         # Используем данные из комментария для удаления
                         return await self.manager.delete_saved_commentary(
-                            user_id, 
+                            user_id,
                             commentary.get('book_id'),
                             commentary.get('chapter_start'),
                             commentary.get('chapter_end'),
@@ -289,7 +300,7 @@ class UniversalDatabaseManager:
     async def get_user_commentaries(self, user_id: int, limit: int = 50) -> list:
         """Получает последние сохраненные толкования пользователя"""
         return await self.manager.get_user_commentaries(user_id, limit)
-    
+
     async def get_saved_commentaries(self, user_id: int, limit: int = 50) -> list:
         """Алиас для get_user_commentaries для совместимости"""
         return await self.get_user_commentaries(user_id, limit)
@@ -298,6 +309,168 @@ class UniversalDatabaseManager:
     async def get_bible_topics(self, search_query: str = "", limit: int = 50) -> list:
         """Получает список библейских тем с возможностью поиска"""
         return await self.manager.get_bible_topics(search_query, limit)
+
+    # Универсальные методы для работы с базой данных
+    async def fetch_one(self, query: str, params: tuple = None) -> Optional[Dict]:
+        """Выполняет запрос и возвращает одну запись"""
+        try:
+            if self.is_postgres or self.is_supabase:
+                # Для PostgreSQL/Supabase используем asyncpg
+                if hasattr(self.manager, 'pool') and self.manager.pool:
+                    async with self.manager.pool.acquire() as conn:
+                        row = await conn.fetchrow(query, *(params or ()))
+                        return dict(row) if row else None
+                else:
+                    logger.error("Пул соединений не инициализирован")
+                    return None
+            else:
+                # Для SQLite используем синхронный подход в отдельном потоке
+                import sqlite3
+                import asyncio
+
+                def _sync_fetch_one():
+                    conn = sqlite3.connect(self.manager.db_file)
+                    conn.row_factory = sqlite3.Row
+                    cursor = conn.cursor()
+                    cursor.execute(query, params or ())
+                    row = cursor.fetchone()
+                    conn.close()
+                    return dict(row) if row else None
+
+                return await asyncio.get_event_loop().run_in_executor(None, _sync_fetch_one)
+
+        except Exception as e:
+            logger.error(f"Ошибка выполнения fetch_one: {e}")
+            return None
+
+    async def fetch_all(self, query: str, params: tuple = None) -> List[Dict]:
+        """Выполняет запрос и возвращает все записи"""
+        try:
+            if self.is_postgres or self.is_supabase:
+                # Для PostgreSQL/Supabase используем asyncpg
+                if hasattr(self.manager, 'pool') and self.manager.pool:
+                    async with self.manager.pool.acquire() as conn:
+                        rows = await conn.fetch(query, *(params or ()))
+                        return [dict(row) for row in rows]
+                else:
+                    logger.error("Пул соединений не инициализирован")
+                    return []
+            else:
+                # Для SQLite используем синхронный подход в отдельном потоке
+                import sqlite3
+                import asyncio
+
+                def _sync_fetch_all():
+                    conn = sqlite3.connect(self.manager.db_file)
+                    conn.row_factory = sqlite3.Row
+                    cursor = conn.cursor()
+                    cursor.execute(query, params or ())
+                    rows = cursor.fetchall()
+                    conn.close()
+                    return [dict(row) for row in rows]
+
+                return await asyncio.get_event_loop().run_in_executor(None, _sync_fetch_all)
+
+        except Exception as e:
+            logger.error(f"Ошибка выполнения fetch_all: {e}")
+            return []
+
+    async def execute(self, query: str, params: tuple = None) -> bool:
+        """Выполняет запрос на изменение данных"""
+        try:
+            if self.is_postgres or self.is_supabase:
+                # Для PostgreSQL/Supabase используем asyncpg
+                if hasattr(self.manager, 'pool') and self.manager.pool:
+                    async with self.manager.pool.acquire() as conn:
+                        await conn.execute(query, *(params or ()))
+                        return True
+                else:
+                    logger.error("Пул соединений не инициализирован")
+                    return False
+            else:
+                # Для SQLite используем синхронный подход в отдельном потоке
+                import sqlite3
+                import asyncio
+
+                def _sync_execute():
+                    conn = sqlite3.connect(self.manager.db_file)
+                    cursor = conn.cursor()
+                    cursor.execute(query, params or ())
+                    conn.commit()
+                    conn.close()
+                    return True
+
+                return await asyncio.get_event_loop().run_in_executor(None, _sync_execute)
+
+        except Exception as e:
+            logger.error(f"Ошибка выполнения execute: {e}")
+            return False
+
+    async def create_ai_settings_table(self) -> bool:
+        """Создает таблицу ai_settings если она не существует"""
+        try:
+            # SQL для создания таблицы
+            if self.is_postgres or self.is_supabase:
+                create_table_sql = """
+                    CREATE TABLE IF NOT EXISTS ai_settings (
+                        id SERIAL PRIMARY KEY,
+                        setting_key VARCHAR(100) NOT NULL UNIQUE,
+                        setting_value TEXT NOT NULL,
+                        setting_type VARCHAR(20) NOT NULL DEFAULT 'string',
+                        description TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                """
+            else:
+                # SQLite версия
+                create_table_sql = """
+                    CREATE TABLE IF NOT EXISTS ai_settings (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        setting_key TEXT NOT NULL UNIQUE,
+                        setting_value TEXT NOT NULL,
+                        setting_type TEXT NOT NULL DEFAULT 'string',
+                        description TEXT,
+                        created_at TEXT DEFAULT (datetime('now')),
+                        updated_at TEXT DEFAULT (datetime('now'))
+                    );
+                """
+
+            await self.execute(create_table_sql)
+
+            # Создаем индекс
+            index_sql = "CREATE INDEX IF NOT EXISTS idx_ai_settings_key ON ai_settings(setting_key);"
+            await self.execute(index_sql)
+
+            # Вставляем значения по умолчанию
+            defaults = [
+                ('ai_daily_limit', '3', 'integer',
+                 'Дневной лимит ИИ запросов для обычных пользователей'),
+                ('premium_package_price', '100', 'integer',
+                 'Цена премиум пакета в рублях'),
+                ('premium_package_requests', '30', 'integer',
+                 'Количество запросов в премиум пакете'),
+                ('admin_premium_mode', 'true', 'boolean',
+                 'Использует ли админ премиум ИИ по умолчанию'),
+                ('free_premium_users', '[]', 'string',
+                 'JSON список пользователей с бесплатным премиум доступом')
+            ]
+
+            for key, value, setting_type, description in defaults:
+                # Проверяем, существует ли уже настройка
+                existing = await self.fetch_one("SELECT setting_key FROM ai_settings WHERE setting_key = ?", (key,))
+                if not existing:
+                    await self.execute(
+                        "INSERT INTO ai_settings (setting_key, setting_value, setting_type, description) VALUES (?, ?, ?, ?)",
+                        (key, value, setting_type, description)
+                    )
+
+            logger.info("✅ Таблица ai_settings создана и инициализирована")
+            return True
+
+        except Exception as e:
+            logger.error(f"❌ Ошибка создания таблицы ai_settings: {e}")
+            return False
 
     async def get_topic_by_name(self, topic_name: str) -> dict:
         """Получает тему по точному названию"""
@@ -326,6 +499,226 @@ class UniversalDatabaseManager:
     async def delete_bible_topic(self, topic_id: int) -> bool:
         """Удаляет библейскую тему"""
         return await self.manager.delete_bible_topic(topic_id)
+
+    # === МЕТОДЫ ДЛЯ РАБОТЫ С НАСТРОЙКАМИ ИИ ===
+
+    async def get_ai_setting(self, setting_key: str):
+        """Получает настройку ИИ по ключу"""
+        if hasattr(self.manager, 'get_ai_setting'):
+            return await self.manager.get_ai_setting(setting_key)
+        else:
+            # Fallback для SQLite
+            result = await self.fetch_one("SELECT * FROM ai_settings WHERE setting_key = ?", (setting_key,))
+            return result
+
+    async def set_ai_setting(self, setting_key: str, setting_value: str, setting_type: str = 'string', description: str = None) -> bool:
+        """Устанавливает настройку ИИ"""
+        if hasattr(self.manager, 'set_ai_setting'):
+            return await self.manager.set_ai_setting(setting_key, setting_value, setting_type, description)
+        else:
+            # Fallback для SQLite
+            try:
+                # Пытаемся обновить существующую настройку
+                await self.execute(
+                    "INSERT OR REPLACE INTO ai_settings (setting_key, setting_value, setting_type, description, updated_at) VALUES (?, ?, ?, ?, datetime('now'))",
+                    (setting_key, setting_value, setting_type, description)
+                )
+                return True
+            except Exception as e:
+                logger.error(f"Ошибка установки настройки {setting_key}: {e}")
+                return False
+
+    async def get_all_ai_settings(self):
+        """Получает все настройки ИИ"""
+        if hasattr(self.manager, 'get_all_ai_settings'):
+            return await self.manager.get_all_ai_settings()
+        else:
+            # Fallback для SQLite
+            return await self.fetch_all("SELECT * FROM ai_settings ORDER BY setting_key")
+
+    # === МЕТОДЫ ДЛЯ РАБОТЫ С ПРЕМИУМ ЗАПРОСАМИ ===
+
+    async def get_user_premium_requests(self, user_id: int) -> int:
+        """Получает количество премиум запросов пользователя"""
+        if hasattr(self.manager, 'get_user_premium_requests'):
+            return await self.manager.get_user_premium_requests(user_id)
+        else:
+            # Fallback для SQLite
+            result = await self.fetch_one("SELECT requests_count FROM premium_requests WHERE user_id = ?", (user_id,))
+            return result['requests_count'] if result else 0
+
+    async def add_premium_requests(self, user_id: int, count: int) -> bool:
+        """Добавляет премиум запросы пользователю"""
+        if hasattr(self.manager, 'add_premium_requests'):
+            return await self.manager.add_premium_requests(user_id, count)
+        else:
+            # Fallback для SQLite
+            try:
+                # Получаем текущие данные
+                existing = await self.fetch_one("SELECT * FROM premium_requests WHERE user_id = ?", (user_id,))
+
+                if existing:
+                    # Обновляем существующую запись
+                    new_count = existing['requests_count'] + count
+                    new_total = existing['total_purchased'] + count
+
+                    await self.execute(
+                        "UPDATE premium_requests SET requests_count = ?, total_purchased = ?, updated_at = datetime('now') WHERE user_id = ?",
+                        (new_count, new_total, user_id)
+                    )
+                else:
+                    # Создаем новую запись
+                    await self.execute(
+                        "INSERT INTO premium_requests (user_id, requests_count, total_purchased, total_used) VALUES (?, ?, ?, 0)",
+                        (user_id, count, count)
+                    )
+
+                return True
+            except Exception as e:
+                logger.error(
+                    f"Ошибка добавления премиум запросов пользователю {user_id}: {e}")
+                return False
+
+    async def use_premium_request(self, user_id: int) -> bool:
+        """Использует один премиум запрос"""
+        if hasattr(self.manager, 'use_premium_request'):
+            return await self.manager.use_premium_request(user_id)
+        else:
+            # Fallback для SQLite
+            try:
+                # Получаем текущее количество
+                result = await self.fetch_one("SELECT * FROM premium_requests WHERE user_id = ?", (user_id,))
+
+                if not result or result['requests_count'] <= 0:
+                    return False
+
+                new_count = result['requests_count'] - 1
+                new_used = result['total_used'] + 1
+
+                # Обновляем запись
+                await self.execute(
+                    "UPDATE premium_requests SET requests_count = ?, total_used = ?, updated_at = datetime('now') WHERE user_id = ?",
+                    (new_count, new_used, user_id)
+                )
+
+                return True
+            except Exception as e:
+                logger.error(
+                    f"Ошибка использования премиум запроса пользователем {user_id}: {e}")
+                return False
+
+    async def get_premium_stats(self, user_id: int):
+        """Получает статистику премиум запросов пользователя"""
+        if hasattr(self.manager, 'get_premium_stats'):
+            return await self.manager.get_premium_stats(user_id)
+        else:
+            # Fallback для SQLite
+            try:
+                result = await self.fetch_one("SELECT * FROM premium_requests WHERE user_id = ?", (user_id,))
+
+                if result:
+                    return {
+                        'available': result['requests_count'],
+                        'total_purchased': result['total_purchased'],
+                        'total_used': result['total_used'],
+                        'created_at': result['created_at']
+                    }
+                else:
+                    return {
+                        'available': 0,
+                        'total_purchased': 0,
+                        'total_used': 0,
+                        'created_at': None
+                    }
+            except Exception as e:
+                logger.error(
+                    f"Ошибка получения статистики премиум запросов для пользователя {user_id}: {e}")
+                return {
+                    'available': 0,
+                    'total_purchased': 0,
+                    'total_used': 0,
+                    'created_at': None
+                }
+
+    # === МЕТОДЫ ДЛЯ РАБОТЫ С ПОКУПКАМИ И ПОЖЕРТВОВАНИЯМИ ===
+
+    async def create_premium_purchase(self, user_id: int, requests_count: int, amount_rub: int, payment_id: str) -> bool:
+        """Создает запись о покупке премиум запросов"""
+        if hasattr(self.manager, 'create_premium_purchase'):
+            return await self.manager.create_premium_purchase(user_id, requests_count, amount_rub, payment_id)
+        else:
+            # Fallback для SQLite
+            try:
+                await self.execute(
+                    "INSERT INTO premium_purchases (user_id, requests_count, amount_rub, payment_id, payment_status) VALUES (?, ?, ?, ?, 'pending')",
+                    (user_id, requests_count, amount_rub, payment_id)
+                )
+                return True
+            except Exception as e:
+                logger.error(f"Ошибка создания покупки премиум запросов: {e}")
+                return False
+
+    async def complete_premium_purchase(self, payment_id: str) -> bool:
+        """Завершает покупку премиум запросов"""
+        if hasattr(self.manager, 'complete_premium_purchase'):
+            return await self.manager.complete_premium_purchase(payment_id)
+        else:
+            # Fallback для SQLite - упрощенная версия
+            try:
+                # Получаем данные покупки
+                purchase = await self.fetch_one(
+                    "SELECT user_id, requests_count FROM premium_purchases WHERE payment_id = ? AND payment_status = 'pending'",
+                    (payment_id,)
+                )
+
+                if not purchase:
+                    return False
+
+                # Обновляем статус покупки
+                await self.execute(
+                    "UPDATE premium_purchases SET payment_status = 'completed', completed_at = datetime('now') WHERE payment_id = ?",
+                    (payment_id,)
+                )
+
+                # Добавляем премиум запросы пользователю
+                return await self.add_premium_requests(purchase['user_id'], purchase['requests_count'])
+
+            except Exception as e:
+                logger.error(
+                    f"Ошибка завершения покупки премиум запросов: {e}")
+                return False
+
+    async def create_donation(self, user_id: int, amount_rub: int, payment_id: str, message: str = None) -> bool:
+        """Создает запись о пожертвовании"""
+        if hasattr(self.manager, 'create_donation'):
+            return await self.manager.create_donation(user_id, amount_rub, payment_id, message)
+        else:
+            # Fallback для SQLite
+            try:
+                await self.execute(
+                    "INSERT INTO donations (user_id, amount_rub, payment_id, message, payment_status) VALUES (?, ?, ?, ?, 'pending')",
+                    (user_id, amount_rub, payment_id, message)
+                )
+                return True
+            except Exception as e:
+                logger.error(f"Ошибка создания пожертвования: {e}")
+                return False
+
+    async def complete_donation(self, payment_id: str) -> bool:
+        """Завершает пожертвование"""
+        if hasattr(self.manager, 'complete_donation'):
+            return await self.manager.complete_donation(payment_id)
+        else:
+            # Fallback для SQLite
+            try:
+                await self.execute(
+                    "UPDATE donations SET payment_status = 'completed', completed_at = datetime('now') WHERE payment_id = ? AND payment_status = 'pending'",
+                    (payment_id,)
+                )
+                return True
+            except Exception as e:
+                logger.error(f"Ошибка завершения пожертвования: {e}")
+                return False
 
 
 # Создаем глобальный экземпляр

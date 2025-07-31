@@ -7,7 +7,12 @@ import time
 from typing import Dict, Any, Optional
 
 from config.settings import API_URL, API_TIMEOUT, CACHE_TTL
-from config.ai_settings import ENABLE_GPT_EXPLAIN, OPENROUTER_API_KEY, OPENROUTER_MODEL, LLM_ROLE
+from config.ai_settings import (
+    ENABLE_GPT_EXPLAIN, OPENROUTER_API_KEY, OPENROUTER_MODEL, LLM_ROLE,
+    OPENROUTER_PREMIUM_API_KEY, OPENROUTER_PREMIUM_MODEL, LLM_PREMIUM_ROLE,
+    AI_REGULAR_MAX_CHARS, AI_PREMIUM_MAX_CHARS,
+    DEFAULT_MAX_TOKENS, PREMIUM_MAX_TOKENS_SHORT, PREMIUM_MAX_TOKENS_FULL
+)
 # Добавляем флаг для логирования OpenRouter API
 try:
     from config.ai_settings import LOG_OPENROUTER_RESPONSE
@@ -458,7 +463,7 @@ async def ask_gpt_explain(text: str) -> str:
             {"role": "system", "content": LLM_ROLE},
             {"role": "user", "content": text}
         ],
-        "max_tokens": 2048,
+        "max_tokens": DEFAULT_MAX_TOKENS,
         "temperature": 0.7
     }
     async with aiohttp.ClientSession() as session:
@@ -468,10 +473,64 @@ async def ask_gpt_explain(text: str) -> str:
                 logger.error(f"OpenRouter API raw response: {data}")
             try:
                 result = data["choices"][0]["message"]["content"].strip()
+
+                # Ограничиваем длину ответа для обычного ИИ
+                if len(result) > AI_REGULAR_MAX_CHARS:
+                    result = result[:AI_REGULAR_MAX_CHARS-3] + "..."
+
                 _gpt_explain_cache[cache_key] = result
                 return result
             except Exception:
                 return "Извините, не удалось получить объяснение от ИИ. Попробуйте позже."
+
+
+async def ask_gpt_explain_premium(text: str, max_tokens: int = PREMIUM_MAX_TOKENS_FULL) -> str:
+    """
+    Отправляет запрос к премиум OpenRouter API для более подробного объяснения стиха или главы.
+    Использует более продвинутую модель и расширенную роль.
+
+    Args:
+        text: Текст для объяснения
+        max_tokens: Максимальное количество токенов в ответе
+    """
+    cache_key = f"premium_{max_tokens}_{text.strip().lower()}"  # Учитываем max_tokens в кэше
+    if cache_key in _gpt_explain_cache:
+        return _gpt_explain_cache[cache_key]
+
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_PREMIUM_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "model": OPENROUTER_PREMIUM_MODEL,
+        "messages": [
+            {"role": "system", "content": LLM_PREMIUM_ROLE},
+            {"role": "user", "content": text}
+        ],
+        "max_tokens": max_tokens,
+        "temperature": 0.6   # Немного меньше температура для более точных ответов
+    }
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=headers, json=payload) as resp:
+                data = await resp.json()
+                if LOG_OPENROUTER_RESPONSE:
+                    logger.info(f"Premium OpenRouter API response: {data}")
+
+                result = data["choices"][0]["message"]["content"].strip()
+
+                # Ограничиваем длину ответа для премиум ИИ
+                if len(result) > AI_PREMIUM_MAX_CHARS:
+                    result = result[:AI_PREMIUM_MAX_CHARS-3] + "..."
+
+                _gpt_explain_cache[cache_key] = result
+                return result
+
+    except Exception as e:
+        logger.error(f"Ошибка премиум ИИ запроса: {e}")
+        return "Извините, не удалось получить объяснение от премиум ИИ помощника. Попробуйте позже."
 
 
 async def ask_gpt_bible_verses(problem_text: str) -> str:
@@ -487,7 +546,7 @@ async def ask_gpt_bible_verses(problem_text: str) -> str:
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json"
     }
-    
+
     system_prompt = (
         "Вы — православный богослов и библейский консультант. "
         "Ваша задача — подобрать 3-5 наиболее подходящих библейских отрывков, "
@@ -501,7 +560,7 @@ async def ask_gpt_bible_verses(problem_text: str) -> str:
         "Тит, Флм, Евр, Иак, 1Пет, 2Пет, 1Ин, 2Ин, 3Ин, Иуд, Откр. "
         "Пример ответа: 'Мф 6:25-34; Флп 4:6-7; 1Пет 5:7; Пс 22:1-6; Ис 41:10'"
     )
-    
+
     payload = {
         "model": OPENROUTER_MODEL,
         "messages": [
@@ -511,7 +570,7 @@ async def ask_gpt_bible_verses(problem_text: str) -> str:
         "max_tokens": 200,
         "temperature": 0.3
     }
-    
+
     async with aiohttp.ClientSession() as session:
         async with session.post(url, headers=headers, json=payload) as resp:
             data = await resp.json()

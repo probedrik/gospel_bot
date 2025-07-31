@@ -79,6 +79,26 @@ async def process_problem_description(message: Message, state: FSMContext):
         )
         return
 
+    # Проверяем квоту ИИ перед выполнением запроса
+    try:
+        from services.ai_quota_manager import ai_quota_manager
+        can_use_ai = await ai_quota_manager.check_and_increment_usage(user_id)
+        
+        if not can_use_ai:
+            quota_info = await ai_quota_manager.get_user_quota_info(user_id)
+            await message.answer(
+                f"❌ **Дневной лимит ИИ исчерпан**\n\n"
+                f"📊 Использовано: {quota_info['used_today']}/{quota_info['daily_limit']}\n"
+                f"⏰ Новые запросы через: {quota_info['hours_until_reset']} ч.\n\n"
+                f"💡 Используйте поиск по темам или сохраненные разборы!",
+                parse_mode="Markdown"
+            )
+            await state.clear()
+            return
+    except Exception as e:
+        logger.error(f"Ошибка проверки квоты ИИ: {e}")
+        # Продолжаем выполнение, если проверка квоты не удалась
+
     # Очищаем состояние
     await state.clear()
 

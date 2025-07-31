@@ -393,7 +393,7 @@ def get_english_book_abbreviation(book_id):
     return None
 
 
-async def create_chapter_action_buttons(book_id, chapter, en_book=None, exclude_ai=False, user_id=None):
+async def create_chapter_action_buttons(book_id, chapter, en_book=None, exclude_ai=False, user_id=None, verse_start=None, verse_end=None, cached_data=None):
     """
     Создает кнопки действий для главы (Толкование Лопухина и Разбор от ИИ).
     Учитывает сохраненные толкования пользователя.
@@ -417,37 +417,77 @@ async def create_chapter_action_buttons(book_id, chapter, en_book=None, exclude_
 
     buttons = []
 
-    # Проверяем сохраненные толкования если user_id передан
+    # Проверяем сохраненные толкования если user_id передан (ОПТИМИЗИРОВАННО)
     saved_ai_commentary = None
     saved_lopukhin_commentary = None
+    is_bookmarked = False
 
     if user_id:
-        try:
-            from database.universal_manager import universal_db_manager
+        # Используем кэшированные данные если переданы
+        if cached_data:
+            saved_ai_commentary = cached_data.get('ai_commentary')
+            saved_lopukhin_commentary = cached_data.get('lopukhin_commentary')
+            is_bookmarked = cached_data.get('is_bookmarked', False)
+        else:
+            # Выполняем запросы только если кэш не передан
+            try:
+                from database.universal_manager import universal_db_manager
+                import asyncio
 
-            # Проверяем ИИ толкования (для всей главы - verse 0)
-            saved_ai_commentary = await universal_db_manager.get_saved_commentary(
-                user_id, book_id, chapter, chapter, 0, 0, "ai"
-            )
-
-            # Проверяем толкования Лопухина (для всей главы - verse 0)
-            saved_lopukhin_commentary = await universal_db_manager.get_saved_commentary(
-                user_id, book_id, chapter, chapter, 0, 0, "lopukhin"
-            )
-        except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.error(f"Ошибка при проверке сохраненных толкований: {e}")
+                # Определяем стих для проверки толкований
+                verse_for_commentary = verse_start if verse_start else 0
+                
+                # ОПТИМИЗАЦИЯ: Выполняем только нужные проверки параллельно
+                tasks = []
+                
+                # Проверяем ИИ толкования
+                tasks.append(universal_db_manager.get_saved_commentary(
+                    user_id, book_id, chapter, chapter, verse_for_commentary, verse_for_commentary, "ai"
+                ))
+                
+                # Проверяем закладки
+                from handlers.bookmark_handlers import check_if_bookmarked
+                tasks.append(check_if_bookmarked(
+                    user_id, book_id, chapter, 
+                    verse_start=verse_start, verse_end=verse_end
+                ))
+                
+                # Добавляем проверку толкований Лопухина только если они включены
+                lopukhin_task_index = None
+                if ENABLE_LOPUKHIN_COMMENTARY:
+                    lopukhin_task_index = len(tasks)
+                    tasks.append(universal_db_manager.get_saved_commentary(
+                        user_id, book_id, chapter, chapter, verse_for_commentary, verse_for_commentary, "lopukhin"
+                    ))
+                
+                # Выполняем все запросы параллельно
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                
+                # Обрабатываем результаты
+                saved_ai_commentary = results[0] if not isinstance(results[0], Exception) else None
+                is_bookmarked = results[1] if not isinstance(results[1], Exception) else False
+                
+                # Получаем результат толкований Лопухина только если запрос был сделан
+                if lopukhin_task_index is not None:
+                    saved_lopukhin_commentary = results[lopukhin_task_index] if not isinstance(results[lopukhin_task_index], Exception) else None
+                else:
+                    saved_lopukhin_commentary = None
+                    
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Ошибка при проверке сохраненных толкований: {e}")
 
     # Кнопка толкования Лопухина (только если есть en_book)
     if ENABLE_LOPUKHIN_COMMENTARY and en_book:
         # Определяем текст кнопки в зависимости от наличия сохраненного толкования
         lopukhin_text = "📚 Обновить толкование Лопухина" if saved_lopukhin_commentary else "Толкование проф. Лопухина"
 
+        verse_for_callback = verse_start if verse_start else 0
         buttons.append([
             InlineKeyboardButton(
                 text=lopukhin_text,
-                callback_data=f"open_commentary_{en_book}_{chapter}_0"
+                callback_data=f"open_commentary_{en_book}_{chapter}_{verse_for_callback}"
             )
         ])
 
@@ -459,25 +499,25 @@ async def create_chapter_action_buttons(book_id, chapter, en_book=None, exclude_
         # Определяем текст кнопки в зависимости от наличия сохраненного толкования
         ai_text = "🔄 Обновить толкование ИИ" if saved_ai_commentary else "🤖 Разбор от ИИ"
 
+        verse_for_callback = verse_start if verse_start else 0
         buttons.append([
             InlineKeyboardButton(
                 text=ai_text,
-                callback_data=f"gpt_explain_{book_param}_{chapter}_0"
+                callback_data=f"gpt_explain_{book_param}_{chapter}_{verse_for_callback}"
             )
         ])
 
-    # Кнопка закладки (если передан user_id)
+    # Кнопка закладки (если передан user_id) - используем уже полученный результат
     if user_id:
         from utils.bookmark_utils import create_bookmark_button
-        from handlers.bookmark_handlers import check_if_bookmarked
-        
-        # Проверяем, добавлена ли глава в закладки
-        is_bookmarked = await check_if_bookmarked(user_id, book_id, chapter)
         
         bookmark_button = create_bookmark_button(
             book_id=book_id,
-            chapter_start=chapter,
-            is_bookmarked=is_bookmarked
+            chapter_start=chapter, 
+            chapter_end=None,
+            verse_start=verse_start,
+            verse_end=verse_end if verse_end else verse_start,
+            is_bookmarked=is_bookmarked  # Уже получено выше
         )
         
         buttons.append([bookmark_button])

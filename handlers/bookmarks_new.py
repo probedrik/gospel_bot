@@ -277,7 +277,7 @@ async def open_bible_bookmark(callback: CallbackQuery, state: FSMContext, bookma
         # Создаем клавиатуру с действиями
         page = bookmark_index // BOOKMARKS_PER_PAGE
         keyboard = create_bookmark_action_keyboard(
-            bookmark_index, "bible", page)
+            bookmark_index, "bible", page, bookmark_data=bookmark)
 
         # Используем HTML формат, как в остальном приложении
         message_text = f"📖 <b>{reference}</b>\n\n{text}"
@@ -325,7 +325,20 @@ async def open_commentary_bookmark(callback: CallbackQuery, state: FSMContext, b
     clean_text = commentary_text.replace('\\n\\n', '\n').replace('\\n', '\n').strip()
     
     # Используем тот же формат, что и в format_ai_or_commentary
-    message_text = f"<b>{reference}</b>\n\n<b>{type_name}</b>\n\n<blockquote>{clean_text}</blockquote>"
+    import html
+    import re
+    
+    # СНАЧАЛА очищаем от HTML тегов
+    cleaned_text = re.sub(r'<[^>]*>', '', clean_text)  # Удаляем все HTML теги
+    
+    # ЗАТЕМ очищаем от markdown символов
+    cleaned_text = re.sub(r'\*\*([^*]+)\*\*', r'\1', cleaned_text)  # **жирный** → жирный
+    cleaned_text = re.sub(r'\*([^*]+)\*', r'\1', cleaned_text)  # *курсив* → курсив
+    cleaned_text = re.sub(r'`([^`]+)`', r'\1', cleaned_text)  # `код` → код
+    
+    cleaned_text = cleaned_text.strip()
+    escaped_text = html.escape(cleaned_text)
+    message_text = f"<b>{reference}</b>\n\n<b>{type_name}</b>\n\n<blockquote>{escaped_text}</blockquote>"
 
     await callback.message.edit_text(
         message_text,

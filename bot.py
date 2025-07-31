@@ -149,6 +149,14 @@ async def main() -> None:
     from handlers import settings as settings_handler
     dp.include_router(settings_handler.router)
 
+    # Запускаем планировщик квот ИИ
+    try:
+        from services.ai_quota_manager import ai_quota_manager
+        await ai_quota_manager.start_quota_reset_scheduler()
+        logger.info("✅ Планировщик квот ИИ запущен")
+    except Exception as e:
+        logger.error("❌ Ошибка запуска планировщика квот: %s", e, exc_info=True)
+
     # Запускаем бота
     try:
         logger.info("Бот запущен")
@@ -158,6 +166,15 @@ async def main() -> None:
         logger.error("Ошибка при запуске бота: %s", e, exc_info=True)
     finally:
         logger.info("Бот остановлен")
+        
+        # Останавливаем планировщик квот
+        try:
+            from services.ai_quota_manager import ai_quota_manager
+            await ai_quota_manager.stop_quota_reset_scheduler()
+            logger.info("✅ Планировщик квот остановлен")
+        except Exception as e:
+            logger.error("❌ Ошибка остановки планировщика квот: %s", e, exc_info=True)
+        
         # Закрываем соединения с базой данных
         await db_manager.close()
         logger.info("Завершение работы")

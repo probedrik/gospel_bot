@@ -109,10 +109,20 @@ class PostgreSQLManager:
                     username TEXT,
                     first_name TEXT,
                     current_translation TEXT DEFAULT 'rst',
+                    response_length TEXT DEFAULT 'full',
                     last_activity TIMESTAMP,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
                 ''')
+
+                # Добавляем поле response_length, если его еще нет (миграция)
+                try:
+                    await conn.execute("ALTER TABLE users ADD COLUMN response_length TEXT DEFAULT 'full'")
+                    logger.info(
+                        "Добавлено поле response_length в таблицу users")
+                except Exception:
+                    # Поле уже существует
+                    pass
 
                 # Таблица закладок
                 await conn.execute('''
@@ -294,9 +304,51 @@ class PostgreSQLManager:
                     last_activity = EXCLUDED.last_activity
             ''', user_id, username, first_name, datetime.now())
 
+    async def update_user_translation(self, user_id: int, translation: str) -> None:
+        """Обновляет предпочитаемый перевод Библии пользователя"""
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE users SET current_translation = $1 WHERE user_id = $2",
+                translation, user_id
+            )
+
+    async def get_user_translation(self, user_id: int) -> str:
+        """Получает предпочитаемый перевод Библии пользователя"""
+        async with self.pool.acquire() as conn:
+            result = await conn.fetchval(
+                "SELECT current_translation FROM users WHERE user_id = $1",
+                user_id
+            )
+            return result if result else 'rst'
+
+    async def update_user_response_length(self, user_id: int, response_length: str) -> None:
+        """Обновляет настройку длины ответа ИИ пользователя"""
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE users SET response_length = $1 WHERE user_id = $2",
+                response_length, user_id
+            )
+
+    async def get_user_response_length(self, user_id: int) -> str:
+        """Получает настройку длины ответа ИИ пользователя"""
+        async with self.pool.acquire() as conn:
+            result = await conn.fetchval(
+                "SELECT response_length FROM users WHERE user_id = $1",
+                user_id
+            )
+            return result if result else 'full'
+
+    async def update_user_activity(self, user_id: int):
+        """Обновляет время последней активности пользователя"""
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE users SET last_activity = $1 WHERE user_id = $2",
+                datetime.now(), user_id
+            )
+
     # Методы для работы с закладками
     async def add_bookmark(self, user_id: int, book_id: int, chapter_start: int,
-                           chapter_end: int = None, display_text: str = None, 
+                           chapter_end: int = None, display_text: str = None,
                            verse_start: int = None, verse_end: int = None, note: str = None) -> bool:
         """Добавляет закладку с поддержкой диапазонов глав и стихов"""
         try:
@@ -323,7 +375,7 @@ class PostgreSQLManager:
             return [tuple(row) for row in rows]
 
     async def remove_bookmark(self, user_id: int, book_id: int, chapter_start: int,
-                             chapter_end: int = None, verse_start: int = None, verse_end: int = None) -> bool:
+                              chapter_end: int = None, verse_start: int = None, verse_end: int = None) -> bool:
         """Удаляет закладку"""
         try:
             async with self.pool.acquire() as conn:
@@ -340,7 +392,7 @@ class PostgreSQLManager:
             return False
 
     async def is_bookmarked(self, user_id: int, book_id: int, chapter_start: int,
-                           chapter_end: int = None, verse_start: int = None, verse_end: int = None) -> bool:
+                            chapter_end: int = None, verse_start: int = None, verse_end: int = None) -> bool:
         """Проверяет, есть ли закладка"""
         try:
             async with self.pool.acquire() as conn:
