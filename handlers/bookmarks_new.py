@@ -322,20 +322,23 @@ async def open_commentary_bookmark(callback: CallbackQuery, state: FSMContext, b
     type_name = "🤖 ИИ разбор" if commentary_type == "ai" else "📝 Комментарий"
 
     # Убираем лишние символы и форматируем как в оригинальном ИИ разборе
-    clean_text = commentary_text.replace('\\n\\n', '\n').replace('\\n', '\n').strip()
-    
+    clean_text = commentary_text.replace(
+        '\\n\\n', '\n').replace('\\n', '\n').strip()
+
     # Используем тот же формат, что и в format_ai_or_commentary
     import html
     import re
-    
+
     # СНАЧАЛА очищаем от HTML тегов
     cleaned_text = re.sub(r'<[^>]*>', '', clean_text)  # Удаляем все HTML теги
-    
+
     # ЗАТЕМ очищаем от markdown символов
-    cleaned_text = re.sub(r'\*\*([^*]+)\*\*', r'\1', cleaned_text)  # **жирный** → жирный
-    cleaned_text = re.sub(r'\*([^*]+)\*', r'\1', cleaned_text)  # *курсив* → курсив
+    # **жирный** → жирный
+    cleaned_text = re.sub(r'\*\*([^*]+)\*\*', r'\1', cleaned_text)
+    cleaned_text = re.sub(r'\*([^*]+)\*', r'\1',
+                          cleaned_text)  # *курсив* → курсив
     cleaned_text = re.sub(r'`([^`]+)`', r'\1', cleaned_text)  # `код` → код
-    
+
     cleaned_text = cleaned_text.strip()
     escaped_text = html.escape(cleaned_text)
     message_text = f"<b>{reference}</b>\n\n<b>{type_name}</b>\n\n<blockquote>{escaped_text}</blockquote>"
@@ -368,7 +371,7 @@ async def delete_bookmark(callback: CallbackQuery, state: FSMContext):
             raw_bookmarks = await db_manager.get_bookmarks(user_id)
             if bookmark_index < len(raw_bookmarks):
                 bookmark = raw_bookmarks[bookmark_index]
-                
+
                 if isinstance(bookmark, dict):
                     # Supabase/PostgreSQL формат - словарь
                     book_id = bookmark.get('book_id')
@@ -416,13 +419,13 @@ async def delete_bookmark(callback: CallbackQuery, state: FSMContext):
 async def back_to_main_menu(callback: CallbackQuery, state: FSMContext):
     """Возврат в главное меню"""
     from keyboards.main import get_main_keyboard
-    
+
     # Удаляем сообщение с inline клавиатурой
     await callback.message.delete()
-    
+
     # Отправляем новое сообщение с обычной клавиатурой
     await callback.message.answer(
         "🏠 Главное меню",
-        reply_markup=get_main_keyboard()
+        reply_markup=await get_main_keyboard()
     )
     await callback.answer()

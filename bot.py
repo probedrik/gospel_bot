@@ -132,20 +132,24 @@ async def main() -> None:
     # Регистрируем роутеры с обработчиками
     dp.include_router(admin.admin_router)  # Административные команды первыми
     dp.include_router(commands.router)
-    
+
     # Новые обработчики закладок (ВАЖНО: регистрируем ДО старых!)
     from handlers import bookmarks_new, bookmark_handlers
     dp.include_router(bookmarks_new.router)
     dp.include_router(bookmark_handlers.router)
-    
+
     dp.include_router(text_messages.router)
     dp.include_router(callbacks.router)
     dp.include_router(bookmarks.router)  # Старый обработчик закладок
     dp.include_router(bookmark_callbacks.router)
     dp.include_router(reading_plans.router)
     dp.include_router(ai_assistant.router)  # ИИ помощник
-    
-    # Настройки
+
+    # Календарь
+    from handlers import calendar as calendar_handler
+    dp.include_router(calendar_handler.router)
+
+    # Настройки (включают обработчики платежей)
     from handlers import settings as settings_handler
     dp.include_router(settings_handler.router)
 
@@ -155,7 +159,8 @@ async def main() -> None:
         await ai_quota_manager.start_quota_reset_scheduler()
         logger.info("✅ Планировщик квот ИИ запущен")
     except Exception as e:
-        logger.error("❌ Ошибка запуска планировщика квот: %s", e, exc_info=True)
+        logger.error("❌ Ошибка запуска планировщика квот: %s",
+                     e, exc_info=True)
 
     # Запускаем бота
     try:
@@ -166,15 +171,16 @@ async def main() -> None:
         logger.error("Ошибка при запуске бота: %s", e, exc_info=True)
     finally:
         logger.info("Бот остановлен")
-        
+
         # Останавливаем планировщик квот
         try:
             from services.ai_quota_manager import ai_quota_manager
             await ai_quota_manager.stop_quota_reset_scheduler()
             logger.info("✅ Планировщик квот остановлен")
         except Exception as e:
-            logger.error("❌ Ошибка остановки планировщика квот: %s", e, exc_info=True)
-        
+            logger.error(
+                "❌ Ошибка остановки планировщика квот: %s", e, exc_info=True)
+
         # Закрываем соединения с базой данных
         await db_manager.close()
         logger.info("Завершение работы")

@@ -219,7 +219,7 @@ async def back_to_menu(callback: CallbackQuery):
     """Обработчик возврата в главное меню"""
     await callback.message.answer(
         "Главное меню:",
-        reply_markup=get_main_keyboard()
+        reply_markup=await get_main_keyboard()
     )
     await callback.answer()
 
@@ -302,7 +302,7 @@ async def change_translation(callback: CallbackQuery, state: FSMContext, db=None
     await callback.answer(f"Выбран перевод: {translations.get(translation, translation)}")
     await callback.message.answer(
         f"Установлен перевод: {translations.get(translation, translation)}",
-        reply_markup=get_main_keyboard()
+        reply_markup=await get_main_keyboard()
     )
 
 
@@ -316,7 +316,7 @@ async def back_to_reading(callback: CallbackQuery, state: FSMContext):
         await callback.answer("Нет активного чтения")
         await callback.message.answer(
             "У вас нет активного чтения. Выберите книгу и главу:",
-            reply_markup=get_main_keyboard()
+            reply_markup=await get_main_keyboard()
         )
         return
 

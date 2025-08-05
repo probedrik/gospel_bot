@@ -4,9 +4,10 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from config.settings import ADMIN_USER_ID
 from config.ai_settings import PREMIUM_AI_PACKAGE_PRICE, PREMIUM_AI_PACKAGE_REQUESTS
+from services.ai_settings_manager import ai_settings_manager
 
 
-def create_settings_keyboard(user_id: int = None) -> InlineKeyboardMarkup:
+async def create_settings_keyboard(user_id: int = None) -> InlineKeyboardMarkup:
     """Создает клавиатуру настроек"""
     buttons = [
         [
@@ -26,14 +27,29 @@ def create_settings_keyboard(user_id: int = None) -> InlineKeyboardMarkup:
                 text="📖 Справка",
                 callback_data="settings_help"
             )
-        ],
-        [
-            InlineKeyboardButton(
-                text="🪙 Помочь проекту",
-                callback_data="settings_donation"
-            )
         ]
     ]
+
+    # Добавляем кнопку календаря если функция включена
+    try:
+        calendar_enabled = await ai_settings_manager.is_calendar_enabled()
+        if calendar_enabled:
+            buttons.append([
+                InlineKeyboardButton(
+                    text="📅 Настройки календаря",
+                    callback_data="calendar_settings"
+                )
+            ])
+    except Exception:
+        # Если ошибка с настройками, пропускаем
+        pass
+
+    buttons.append([
+        InlineKeyboardButton(
+            text="🪙 Помочь проекту",
+            callback_data="settings_donation"
+        )
+    ])
 
     # Добавляем админские настройки для администратора
     if user_id and user_id == ADMIN_USER_ID:
@@ -137,6 +153,12 @@ def create_premium_ai_keyboard() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(
+                text="🌟 Купить за Telegram Stars",
+                callback_data="buy_premium_stars"
+            )
+        ],
+        [
+            InlineKeyboardButton(
                 text="📊 Мои премиум запросы",
                 callback_data="my_premium_requests"
             )
@@ -161,6 +183,12 @@ def create_premium_ai_keyboard() -> InlineKeyboardMarkup:
 def create_donation_keyboard() -> InlineKeyboardMarkup:
     """Создает клавиатуру пожертвований"""
     buttons = [
+        [
+            InlineKeyboardButton(
+                text="⭐ Telegram Stars",
+                callback_data="donate_stars_menu"
+            )
+        ],
         [
             InlineKeyboardButton(
                 text="🪙 50₽",
@@ -335,8 +363,106 @@ def create_button_management_keyboard() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(
+                text="📅 Православный календарь",
+                callback_data="toggle_button_calendar"
+            ),
+            InlineKeyboardButton(
+                text="✅",  # Включена по умолчанию
+                callback_data="noop"
+            )
+        ],
+        [
+            InlineKeyboardButton(
                 text="⬅️ Назад к админ панели",
                 callback_data="back_to_admin"
+            )
+        ]
+    ]
+
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def create_stars_donation_keyboard() -> InlineKeyboardMarkup:
+    """Создает клавиатуру для пожертвований Telegram Stars"""
+    buttons = [
+        [
+            InlineKeyboardButton(
+                text="⭐ 10 Stars",
+                callback_data="donate_stars_10"
+            ),
+            InlineKeyboardButton(
+                text="⭐ 25 Stars",
+                callback_data="donate_stars_25"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="⭐ 50 Stars",
+                callback_data="donate_stars_50"
+            ),
+            InlineKeyboardButton(
+                text="⭐ 100 Stars",
+                callback_data="donate_stars_100"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="⭐ 250 Stars",
+                callback_data="donate_stars_250"
+            ),
+            InlineKeyboardButton(
+                text="⭐ 500 Stars",
+                callback_data="donate_stars_500"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="💰 Ввести количество",
+                callback_data="donate_stars_custom"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="⬅️ Назад к пожертвованиям",
+                callback_data="settings_donation"
+            )
+        ]
+    ]
+
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def create_premium_stars_keyboard() -> InlineKeyboardMarkup:
+    """Создает клавиатуру для покупки премиума за Stars"""
+    buttons = [
+        [
+            InlineKeyboardButton(
+                text="⭐ 10 запросов за 25 Stars",
+                callback_data="buy_premium_stars_10"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="⭐ 25 запросов за 50 Stars",
+                callback_data="buy_premium_stars_25"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="⭐ 50 запросов за 100 Stars",
+                callback_data="buy_premium_stars_50"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="💎 100 запросов за 180 Stars",
+                callback_data="buy_premium_stars_100"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="⬅️ Назад к настройкам",
+                callback_data="back_to_settings"
             )
         ]
     ]

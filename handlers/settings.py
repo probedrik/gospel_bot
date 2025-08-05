@@ -24,6 +24,9 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 
+# Диагностический обработчик убран
+
+
 async def get_premium_info_text() -> str:
     """Возвращает актуальный текст информации о премиум доступе"""
     from services.ai_settings_manager import ai_settings_manager
@@ -95,7 +98,7 @@ async def get_premium_detailed_info_text() -> str:
 @router.message(F.text == "⚙️ Настройки")
 async def show_settings_menu(message: Message, state: FSMContext):
     """Показывает меню настроек"""
-    keyboard = create_settings_keyboard(message.from_user.id)
+    keyboard = await create_settings_keyboard(message.from_user.id)
     await message.answer(
         "⚙️ **Настройки**\n\n"
         "Выберите раздел настроек:",
@@ -107,7 +110,7 @@ async def show_settings_menu(message: Message, state: FSMContext):
 @router.callback_query(F.data == "back_to_settings")
 async def back_to_settings(callback: CallbackQuery, state: FSMContext):
     """Возврат к настройкам"""
-    keyboard = create_settings_keyboard(callback.from_user.id)
+    keyboard = await create_settings_keyboard(callback.from_user.id)
     await callback.message.edit_text(
         "⚙️ **Настройки**\n\n"
         "Выберите раздел настроек:",
@@ -257,7 +260,7 @@ async def settings_help(callback: CallbackQuery, state: FSMContext):
         "💬 **Поддержка:** @your_support_username"
     )
 
-    keyboard = create_settings_keyboard(callback.from_user.id)
+    keyboard = await create_settings_keyboard(callback.from_user.id)
     await callback.message.edit_text(
         help_text,
         reply_markup=keyboard,
@@ -490,9 +493,9 @@ async def settings_donation(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("donate_"))
+@router.callback_query(F.data.startswith("donate_") & ~F.data.in_(["donate_stars_menu"]))
 async def process_donation(callback: CallbackQuery, state: FSMContext):
-    """Обработка пожертвований"""
+    """Обработка рублевых пожертвований (исключая Stars)"""
     amount = callback.data.split("_")[1]
 
     if amount == "custom":
@@ -510,6 +513,37 @@ async def process_donation(callback: CallbackQuery, state: FSMContext):
     )
 
 
+@router.callback_query(F.data == "donate_stars_menu")
+async def show_stars_donation_menu(callback: CallbackQuery, state: FSMContext):
+    """Показывает меню пожертвований Telegram Stars"""
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(
+        f"🌟 УСПЕШНО: Открыто меню Stars пожертвований для пользователя {callback.from_user.id}")
+
+    from keyboards.settings import create_stars_donation_keyboard
+
+    stars_text = (
+        "⭐ **Пожертвование через Telegram Stars**\n\n"
+        "🌟 **Преимущества Telegram Stars:**\n"
+        "• Быстрая и безопасная оплата прямо в Telegram\n"
+        "• Не нужны банковские карты\n"
+        "• Мгновенное поступление средств\n"
+        "• Полная анонимность\n\n"
+        "💫 **Что такое Stars?**\n"
+        "Telegram Stars - это внутренняя валюта Telegram для поддержки проектов и каналов.\n\n"
+        "🎯 **Выберите сумму для пожертвования:**"
+    )
+
+    keyboard = create_stars_donation_keyboard()
+
+    await callback.message.edit_text(
+        stars_text,
+        reply_markup=keyboard
+    )
+    await callback.answer()
+
+
 @router.callback_query(F.data == "donation_info")
 async def donation_info(callback: CallbackQuery, state: FSMContext):
     """Информация о пожертвованиях"""
@@ -517,14 +551,17 @@ async def donation_info(callback: CallbackQuery, state: FSMContext):
         "ℹ️ **О пожертвованиях**\n\n"
         "🎯 **Цель проекта:**\n"
         "Создать лучшего библейского помощника с ИИ поддержкой для изучения Священного Писания.\n\n"
+        "💰 **Способы оплаты:**\n"
+        "• 🌟 **Telegram Stars** - быстро и удобно\n"
+        "• 💳 **ЮKassa** - карты, СБП, кошельки\n\n"
         "💰 **Прозрачность:**\n"
         "• Все средства идут на развитие проекта\n"
         "• Никакой личной выгоды разработчика\n"
         "• Отчеты о тратах по запросу\n\n"
         "🔒 **Безопасность:**\n"
-        "• Оплата через официальную ЮKassa\n"
+        "• Оплата через официальные системы\n"
         "• Все транзакции защищены\n"
-        "• Чек приходит на email\n\n"
+        "• Полная анонимность при оплате Stars\n\n"
         "🙏 **Благодарность:**\n"
         "Каждое пожертвование - это инвестиция в духовное развитие сообщества.\n\n"
         "📧 **Связь:** Вопросы о пожертвованиях можно задать через /feedback"
@@ -537,6 +574,41 @@ async def donation_info(callback: CallbackQuery, state: FSMContext):
         parse_mode="Markdown"
     )
     await callback.answer()
+
+
+# Обработчики Stars перенесены в handlers/payments.py
+
+
+@router.callback_query(F.data == "buy_premium_stars")
+async def show_premium_stars_menu(callback: CallbackQuery, state: FSMContext):
+    """Показывает меню покупки премиума за Stars"""
+    from keyboards.settings import create_premium_stars_keyboard
+
+    premium_stars_text = (
+        "🌟 **Премиум запросы за Telegram Stars**\n\n"
+        "⭐ **Пакеты премиум запросов:**\n"
+        "• 10 запросов = 25 Stars (2.5 Stars за запрос)\n"
+        "• 25 запросов = 50 Stars (2.0 Stars за запрос)\n"
+        "• 50 запросов = 100 Stars (2.0 Stars за запрос)\n"
+        "• 100 запросов = 180 Stars (1.8 Stars за запрос) 💎\n\n"
+        "🎯 **Преимущества больших пакетов:**\n"
+        "• Больше выгода за запрос\n"
+        "• Удобнее для активных пользователей\n"
+        "• Запросы не сгорают\n\n"
+        "💫 **Выберите пакет:**"
+    )
+
+    keyboard = create_premium_stars_keyboard()
+
+    await callback.message.edit_text(
+        premium_stars_text,
+        reply_markup=keyboard,
+        parse_mode="Markdown"
+    )
+    await callback.answer()
+
+
+# Обработчик premium_stars_ перенесен в handlers/payments.py
 
 
 # Админ панель управления настройками ИИ
@@ -745,6 +817,32 @@ async def admin_toggle_ai_mode(callback: CallbackQuery, state: FSMContext):
         await admin_ai_limits(callback, state)
     else:
         await callback.answer("❌ Ошибка изменения режима", show_alert=True)
+
+
+@router.callback_query(F.data == "toggle_button_calendar")
+async def toggle_calendar_button(callback: CallbackQuery, state: FSMContext):
+    """Переключение кнопки календаря в главном меню"""
+    if callback.from_user.id != ADMIN_USER_ID:
+        await callback.answer("У вас нет прав доступа")
+        return
+
+    from services.ai_settings_manager import ai_settings_manager
+
+    # Получаем текущее состояние
+    current_enabled = await ai_settings_manager.is_calendar_enabled()
+    new_enabled = not current_enabled
+
+    # Переключаем
+    success = await ai_settings_manager.set_calendar_enabled(new_enabled)
+
+    if success:
+        status = "включена" if new_enabled else "отключена"
+        await callback.answer(f"✅ Кнопка календаря {status}")
+    else:
+        await callback.answer("❌ Ошибка при изменении настройки")
+
+    # Возвращаемся к панели управления кнопками
+    await admin_buttons(callback, state)
 
 
 @router.callback_query(F.data == "admin_free_premium_users")
@@ -987,6 +1085,6 @@ async def back_to_main_menu(callback: CallbackQuery, state: FSMContext):
     # Отправляем новое сообщение с обычной клавиатурой
     await callback.message.answer(
         "🏠 Главное меню",
-        reply_markup=get_main_keyboard()
+        reply_markup=await get_main_keyboard()
     )
     await callback.answer()

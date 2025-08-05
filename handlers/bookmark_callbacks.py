@@ -63,7 +63,7 @@ async def add_bookmark(callback: CallbackQuery, state: FSMContext, db=None):
             chapter_start=chapter,
             display_text=display_text
         )
-        
+
         if success:
             await callback.answer(f"✅ Добавлено в закладки: {display_text}")
             logger.info(f"Закладка успешно добавлена: {display_text}")
@@ -71,7 +71,7 @@ async def add_bookmark(callback: CallbackQuery, state: FSMContext, db=None):
             await callback.answer("❌ Ошибка при добавлении закладки")
             logger.error(f"Не удалось добавить закладку: {display_text}")
             return
-            
+
     except Exception as e:
         logger.error(f"Ошибка при добавлении закладки: {e}")
         await callback.answer("❌ Ошибка при добавлении закладки")
@@ -124,7 +124,7 @@ async def clear_bookmarks(callback: CallbackQuery, state: FSMContext, db=None):
         logger.info(f"Закладки очищены в состоянии для пользователя {user_id}")
 
         await callback.answer("Все закладки удалены")
-        await callback.message.answer("Все закладки были удалены.", reply_markup=get_main_keyboard())
+        await callback.message.answer("Все закладки были удалены.", reply_markup=await get_main_keyboard())
     except Exception as e:
         logger.error(f"Ошибка при очистке закладок: {e}", exc_info=True)
         await callback.answer("Ошибка при удалении закладок")
@@ -275,7 +275,7 @@ async def bookmark_selected(callback: CallbackQuery, state: FSMContext, db=None)
         await callback.answer("Ошибка при открытии закладки")
         await callback.message.answer(
             f"Не удалось загрузить главу из закладки.",
-            reply_markup=get_main_keyboard()
+            reply_markup=await get_main_keyboard()
         )
 
 

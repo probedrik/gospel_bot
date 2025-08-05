@@ -196,13 +196,13 @@ async def show_bookmarks(message: Message, state: FSMContext, db=None):
             await message.answer(
                 "У вас пока нет сохраненных закладок. "
                 "Чтобы добавить закладку, откройте главу книги и нажмите кнопку 'Добавить закладку'.",
-                reply_markup=get_main_keyboard()
+                reply_markup=await get_main_keyboard()
             )
     except Exception as e:
         logger.error(f"Ошибка при отображении закладок: {e}", exc_info=True)
         await message.answer(
             "Произошла ошибка при отображении закладок. Пожалуйста, попробуйте позже.",
-            reply_markup=get_main_keyboard()
+            reply_markup=await get_main_keyboard()
         )
 
 

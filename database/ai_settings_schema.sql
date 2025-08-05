@@ -15,7 +15,13 @@ INSERT INTO ai_settings (setting_key, setting_value, setting_type, description) 
 ('premium_package_price', '100', 'integer', 'Цена премиум пакета в рублях'),
 ('premium_package_requests', '30', 'integer', 'Количество запросов в премиум пакете'),
 ('admin_premium_mode', 'true', 'boolean', 'Использует ли админ премиум ИИ по умолчанию'),
-('free_premium_users', '[]', 'string', 'JSON список пользователей с бесплатным премиум доступом')
+('free_premium_users', '[]', 'string', 'JSON список пользователей с бесплатным премиум доступом'),
+('calendar_enabled', 'true', 'boolean', 'Включена ли функция православного календаря'),
+('calendar_default_header', 'true', 'boolean', 'Показывать заголовок календаря по умолчанию'),
+('calendar_default_lives', 'true', 'boolean', 'Показывать жития святых по умолчанию'),
+('calendar_default_tropars', 'true', 'boolean', 'Показывать тропари по умолчанию'),
+('calendar_default_scripture', 'true', 'boolean', 'Показывать Евангельские чтения по умолчанию'),
+('calendar_default_date_format', 'true', 'boolean', 'Показывать дату в григорианском/юлианском формате по умолчанию')
 ON CONFLICT (setting_key) DO NOTHING;
 
 -- Индекс для быстрого поиска

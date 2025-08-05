@@ -256,7 +256,7 @@ class BibleData:
     def get_book_name(self, book_id: int) -> str:
         """Возвращает название книги по её ID."""
         return self.book_dict.get(book_id, f"Книга {book_id}")
-    
+
     def get_book_name_by_id(self, book_id: int) -> str:
         """Алиас для get_book_name для совместимости."""
         return self.get_book_name(book_id)
@@ -436,22 +436,22 @@ async def create_chapter_action_buttons(book_id, chapter, en_book=None, exclude_
 
                 # Определяем стих для проверки толкований
                 verse_for_commentary = verse_start if verse_start else 0
-                
+
                 # ОПТИМИЗАЦИЯ: Выполняем только нужные проверки параллельно
                 tasks = []
-                
+
                 # Проверяем ИИ толкования
                 tasks.append(universal_db_manager.get_saved_commentary(
                     user_id, book_id, chapter, chapter, verse_for_commentary, verse_for_commentary, "ai"
                 ))
-                
+
                 # Проверяем закладки
                 from handlers.bookmark_handlers import check_if_bookmarked
                 tasks.append(check_if_bookmarked(
-                    user_id, book_id, chapter, 
+                    user_id, book_id, chapter,
                     verse_start=verse_start, verse_end=verse_end
                 ))
-                
+
                 # Добавляем проверку толкований Лопухина только если они включены
                 lopukhin_task_index = None
                 if ENABLE_LOPUKHIN_COMMENTARY:
@@ -459,24 +459,28 @@ async def create_chapter_action_buttons(book_id, chapter, en_book=None, exclude_
                     tasks.append(universal_db_manager.get_saved_commentary(
                         user_id, book_id, chapter, chapter, verse_for_commentary, verse_for_commentary, "lopukhin"
                     ))
-                
+
                 # Выполняем все запросы параллельно
                 results = await asyncio.gather(*tasks, return_exceptions=True)
-                
+
                 # Обрабатываем результаты
-                saved_ai_commentary = results[0] if not isinstance(results[0], Exception) else None
-                is_bookmarked = results[1] if not isinstance(results[1], Exception) else False
-                
+                saved_ai_commentary = results[0] if not isinstance(
+                    results[0], Exception) else None
+                is_bookmarked = results[1] if not isinstance(
+                    results[1], Exception) else False
+
                 # Получаем результат толкований Лопухина только если запрос был сделан
                 if lopukhin_task_index is not None:
-                    saved_lopukhin_commentary = results[lopukhin_task_index] if not isinstance(results[lopukhin_task_index], Exception) else None
+                    saved_lopukhin_commentary = results[lopukhin_task_index] if not isinstance(
+                        results[lopukhin_task_index], Exception) else None
                 else:
                     saved_lopukhin_commentary = None
-                    
+
             except Exception as e:
                 import logging
                 logger = logging.getLogger(__name__)
-                logger.error(f"Ошибка при проверке сохраненных толкований: {e}")
+                logger.error(
+                    f"Ошибка при проверке сохраненных толкований: {e}")
 
     # Кнопка толкования Лопухина (только если есть en_book)
     if ENABLE_LOPUKHIN_COMMENTARY and en_book:
@@ -499,27 +503,34 @@ async def create_chapter_action_buttons(book_id, chapter, en_book=None, exclude_
         # Определяем текст кнопки в зависимости от наличия сохраненного толкования
         ai_text = "🔄 Обновить толкование ИИ" if saved_ai_commentary else "🤖 Разбор от ИИ"
 
-        verse_for_callback = verse_start if verse_start else 0
+        # Формируем callback для ИИ разбора с учетом диапазона стихов
+        if verse_start and verse_end:
+            verse_callback = f"{verse_start}_{verse_end}"
+        elif verse_start:
+            verse_callback = str(verse_start)
+        else:
+            verse_callback = "0"
+
         buttons.append([
             InlineKeyboardButton(
                 text=ai_text,
-                callback_data=f"gpt_explain_{book_param}_{chapter}_{verse_for_callback}"
+                callback_data=f"gpt_explain_{book_param}_{chapter}_{verse_callback}"
             )
         ])
 
     # Кнопка закладки (если передан user_id) - используем уже полученный результат
     if user_id:
         from utils.bookmark_utils import create_bookmark_button
-        
+
         bookmark_button = create_bookmark_button(
             book_id=book_id,
-            chapter_start=chapter, 
+            chapter_start=chapter,
             chapter_end=None,
             verse_start=verse_start,
             verse_end=verse_end if verse_end else verse_start,
             is_bookmarked=is_bookmarked  # Уже получено выше
         )
-        
+
         buttons.append([bookmark_button])
 
     return buttons

@@ -229,7 +229,7 @@ async def chapter_input(message: Message, state: FSMContext, db=None):
     if not book_id:
         await message.answer(
             "Сначала выберите книгу с помощью кнопки '📖 Выбрать книгу'",
-            reply_markup=get_main_keyboard()
+            reply_markup=await get_main_keyboard()
         )
         return
 
@@ -241,7 +241,7 @@ async def chapter_input(message: Message, state: FSMContext, db=None):
     if chapter < 1 or chapter > max_chapters:
         await message.answer(
             f"Пожалуйста, введите номер главы от 1 до {max_chapters}",
-            reply_markup=get_main_keyboard()
+            reply_markup=await get_main_keyboard()
         )
         return
 
@@ -263,7 +263,7 @@ async def chapter_input(message: Message, state: FSMContext, db=None):
         if text.startswith("Ошибка:"):
             await message.answer(
                 f"Произошла ошибка при загрузке главы {chapter} книги {book_name}.",
-                reply_markup=get_main_keyboard()
+                reply_markup=await get_main_keyboard()
             )
             return
 
@@ -300,7 +300,7 @@ async def chapter_input(message: Message, state: FSMContext, db=None):
         await message.answer(
             f"Произошла ошибка при загрузке главы {chapter} книги {book_name}. "
             f"Пожалуйста, попробуйте позже.",
-            reply_markup=get_main_keyboard()
+            reply_markup=await get_main_keyboard()
         )
 
 
@@ -308,7 +308,7 @@ async def chapter_input(message: Message, state: FSMContext, db=None):
 
 
 @router.message(
-    lambda msg: re.match(
+    lambda msg: msg.text and re.match(
         r'^([а-яА-ЯёЁ0-9\s]+)\s+(\d+)(?::(\d+)(?:-(?:(\d+):)?(\d+))?)?$', msg.text.strip(), re.IGNORECASE) is not None
 )
 async def verse_reference(message: Message, state: FSMContext):
@@ -420,7 +420,7 @@ if ENABLE_WORD_SEARCH:
         if current_state == "waiting_for_search_query":
             await state.clear()
 
-        await message.answer("Поиск отменен. Вернулись в главное меню.", reply_markup=get_main_keyboard())
+        await message.answer("Поиск отменен. Вернулись в главное меню.", reply_markup=await get_main_keyboard())
 
     @router.message(lambda message: message.text and not message.text.startswith('/'))
     async def process_search_query(message: Message, state: FSMContext, db=None):
@@ -436,7 +436,7 @@ if ENABLE_WORD_SEARCH:
         await state.clear()
 
         # Отправляем сообщение о начале поиска
-        await message.answer(f"Ищу '{search_query}' в тексте Библии...", reply_markup=get_main_keyboard())
+        await message.answer(f"Ищу '{search_query}' в тексте Библии...", reply_markup=await get_main_keyboard())
 
         # Проверяем длину запроса
         if len(search_query) < 3:
@@ -565,6 +565,57 @@ async def back_to_topics(callback: CallbackQuery):
     kb = InlineKeyboardMarkup(inline_keyboard=buttons)
     await callback.message.edit_text("Выберите тему или воспользуйтесь ИИ помощником:", reply_markup=kb)
     await callback.answer()
+
+
+@router.callback_query(F.data == "back_to_calendar")
+async def back_to_calendar(callback: CallbackQuery, state: FSMContext):
+    """Возвращает к календарю"""
+    from datetime import datetime
+    from keyboards.calendar import create_calendar_keyboard
+    from utils.orthodox_calendar import orthodox_calendar
+    from handlers.calendar import _format_calendar_message
+
+    try:
+        # Показываем календарь на сегодняшний день
+        today = datetime.now()
+
+        # Получаем настройки календаря
+        from services.ai_settings_manager import ai_settings_manager
+        calendar_settings = await ai_settings_manager.get_calendar_default_settings()
+
+        # Получаем данные календаря
+        calendar_html = await orthodox_calendar.get_calendar_data(today, calendar_settings)
+        if not calendar_html:
+            await callback.answer("❌ Не удалось получить данные календаря", show_alert=True)
+            return
+
+        # Парсим HTML в структурированные данные
+        calendar_data = orthodox_calendar.parse_calendar_content(calendar_html)
+
+        # Форматируем сообщение
+        message_text = _format_calendar_message(calendar_data, today)
+
+        # Создаем клавиатуру
+        keyboard = create_calendar_keyboard(
+            today,
+            calendar_data.get('scripture_references', []),
+            show_settings=True,
+            user_id=callback.from_user.id
+        )
+
+        await callback.message.edit_text(
+            message_text,
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
+
+        # Очищаем флаг календаря из состояния
+        await state.update_data(from_calendar=False)
+        await callback.answer()
+
+    except Exception as e:
+        logger.error(f"Ошибка при возврате к календарю: {e}")
+        await callback.answer("❌ Ошибка при загрузке календаря", show_alert=True)
 
 
 @router.message(F.text == "🎯 Темы")
@@ -1136,6 +1187,173 @@ async def show_commentary_page(callback, book, chapter, all_comments, idx, state
             )
 
 
+@router.callback_query(F.data.startswith("gpt_explain_complex_"))
+async def gpt_explain_complex_callback(callback: CallbackQuery, state: FSMContext = None):
+    """Обработчик ИИ разбора для сложных чтений с несколькими частями"""
+    import re
+
+    # Проверяем квоту ИИ перед выполнением запроса
+    try:
+        from services.ai_quota_manager import ai_quota_manager
+        can_use_ai, ai_type = await ai_quota_manager.check_and_increment_usage(callback.from_user.id)
+
+        if not can_use_ai:
+            quota_info = await ai_quota_manager.get_user_quota_info(callback.from_user.id)
+            total_available = quota_info.get('total_available', 0)
+            await callback.answer(
+                f"❌ Все лимиты ИИ исчерпаны (доступно: {total_available}). "
+                f"Дневные лимиты обновятся через {quota_info['hours_until_reset']} ч. "
+                f"Или купите премиум запросы в настройках.",
+                show_alert=True
+            )
+            return
+    except Exception as e:
+        logger.error(f"Ошибка проверки квоты ИИ: {e}")
+        ai_type = 'regular'
+
+    # Сразу отвечаем на callback чтобы избежать timeout
+    await callback.answer("🤖 Генерирую AI-разбор сложного чтения...")
+
+    # Парсим callback_data: gpt_explain_complex_book_id_chapter_verse_start_verse_end|book_id_chapter_verse_start_verse_end|...
+    data_part = callback.data.replace("gpt_explain_complex_", "")
+    ref_parts = data_part.split("|")
+    logger.info(f"ИИ разбор сложного чтения: {ref_parts}")
+
+    # Получаем текст всех частей
+    from utils.bible_data import bible_data
+    from handlers.verse_reference import get_verse_by_reference
+
+    all_texts = []
+    all_references = []
+
+    for ref_part in ref_parts:
+        parts = ref_part.split("_")
+        if len(parts) != 4:
+            continue
+
+        book_id = int(parts[0])
+        chapter = int(parts[1])
+        verse_start = int(parts[2])
+        verse_end = int(parts[3])
+
+        book_name = bible_data.get_book_name(book_id)
+        if not book_name:
+            continue
+
+        if verse_start == verse_end:
+            reference = f"{book_name} {chapter}:{verse_start}"
+        else:
+            reference = f"{book_name} {chapter}:{verse_start}-{verse_end}"
+
+        all_references.append(reference)
+        logger.info(f"Получаем текст для: {reference}")
+
+        try:
+            text, meta = await get_verse_by_reference(state, reference)
+            all_texts.append(f"📖 {reference}:\n{text}")
+        except Exception as e:
+            logger.error(f"Ошибка получения текста для {reference}: {e}")
+            continue
+
+    if not all_texts:
+        await callback.message.answer("❌ Не удалось получить тексты для разбора")
+        return
+
+    # Объединяем все тексты для анализа
+    combined_text = "\n\n━━━━━━━━━━━━━━━━━━━━━━━━━\n\n".join(all_texts)
+    references_text = "; ".join(all_references)
+
+    # Формируем запрос к ИИ
+    from utils.api_client import ask_gpt_explain, ask_gpt_explain_premium
+
+    if ai_type == 'premium':
+        prompt = f"Проанализируйте следующие библейские отрывки как единое тематическое чтение:\n\nОтрывки: {references_text}\n\n{combined_text}\n\nДайте подробный богословский анализ с историческим контекстом, объясните связь между отрывками."
+        # Увеличиваем токены и символы для сложного разбора (больше текста)
+        max_tokens = 2000  # Увеличено с 1200 для сложных чтений
+        max_chars = 16000  # Увеличено с 8000 для сложных чтений
+        title = "⭐ Премиум разбор сложного чтения от ИИ"
+        response = await ask_gpt_explain_premium(prompt, max_tokens, max_chars)
+    else:
+        prompt = f"Объясни смысл следующих библейских отрывков как единого чтения:\n\nОтрывки: {references_text}\n\n{combined_text}\n\nОтветь кратко и по существу, объясни связь между частями."
+        response = await ask_gpt_explain(prompt)
+        title = "🤖 Разбор сложного чтения от ИИ"
+
+    try:
+        # Очищаем ответ ИИ от HTML тегов
+        import re
+        cleaned_response = re.sub(r'<[^>]*>', '', response)
+        cleaned_response = cleaned_response.strip()
+
+        # Ограничение длины уже применено в API функциях, дополнительное ограничение не нужно
+
+        # Форматируем как цитату с заголовком
+        formatted, opts = format_ai_or_commentary(
+            cleaned_response, title=title)
+
+        # Разбиваем на части
+        from utils.text_utils import split_text
+        text_parts = list(split_text(formatted))
+
+        for idx, part in enumerate(text_parts):
+            if idx == len(text_parts) - 1:  # Последняя часть - добавляем кнопки
+                # Создаем кнопки действий для сложного чтения
+                all_buttons = []
+
+                # Добавляем кнопку возврата в зависимости от контекста
+                if state:
+                    data = await state.get_data()
+                    if data.get('from_calendar'):
+                        # Пользователь пришел из календаря
+                        all_buttons.append([
+                            InlineKeyboardButton(
+                                text="⬅️ Назад к календарю",
+                                callback_data="back_to_calendar"
+                            )
+                        ])
+                    else:
+                        # Пользователь пришел из готовых тем
+                        all_buttons.append([
+                            InlineKeyboardButton(
+                                text="⬅️ Назад к темам",
+                                callback_data="back_to_topics"
+                            )
+                        ])
+
+                # Добавляем кнопку для сохранения сложного толкования
+                complex_callback_data = f"save_complex_commentary_{'|'.join(ref_parts)}_ai"
+                all_buttons.append([
+                    InlineKeyboardButton(
+                        text="💾 Сохранить разбор сложного чтения",
+                        callback_data=complex_callback_data
+                    )
+                ])
+
+                if all_buttons:
+                    from aiogram.types import InlineKeyboardMarkup
+                    keyboard = InlineKeyboardMarkup(
+                        inline_keyboard=all_buttons)
+                    await callback.message.answer(part, reply_markup=keyboard, **opts)
+                else:
+                    await callback.message.answer(part, **opts)
+            else:
+                await callback.message.answer(part, **opts)
+
+        # Сохраняем текст разбора в состоянии для возможного сохранения
+        if state:
+            await state.update_data(
+                last_complex_commentary=cleaned_response,
+                last_complex_references=ref_parts,
+                last_complex_type=ai_type
+            )
+
+        logger.info(
+            f"ИИ разбор сложного чтения отправлен пользователю {callback.from_user.id}")
+
+    except Exception as e:
+        logger.error(f"Ошибка при отправке ИИ разбора: {e}")
+        await callback.message.answer("❌ Ошибка при обработке ответа ИИ")
+
+
 @router.callback_query(F.data.regexp(r'^gpt_explain_([A-Za-z0-9]+)_(\d+)_(.+)$'))
 async def gpt_explain_callback(callback: CallbackQuery, state: FSMContext = None):
     import re
@@ -1202,7 +1420,7 @@ async def gpt_explain_callback(callback: CallbackQuery, state: FSMContext = None
     chapter = int(match.group(2))
     verse_part = match.group(3)
 
-    # Парсим часть со стихом (может быть "0", "5", "5-10")
+    # Парсим часть со стихом (может быть "0", "5", "5-10", "5_10")
     if verse_part == "0":
         verse = 0
         verse_end = None
@@ -1215,6 +1433,20 @@ async def gpt_explain_callback(callback: CallbackQuery, state: FSMContext = None
             # Если не удалось распарсить диапазон, используем как одиночный стих
             try:
                 verse = int(verse_part.replace("-", ""))
+                verse_end = None
+            except ValueError:
+                verse = 0
+                verse_end = None
+    elif "_" in verse_part:
+        # Новый формат для диапазонов из календаря: "verse_start_verse_end"
+        verse_parts = verse_part.split("_")
+        if len(verse_parts) >= 2 and verse_parts[0].strip() and verse_parts[1].strip():
+            verse = int(verse_parts[0].strip())
+            verse_end = int(verse_parts[1].strip())
+        else:
+            # Если не удалось распарсить диапазон, используем как одиночный стих
+            try:
+                verse = int(verse_parts[0]) if verse_parts[0] else 0
                 verse_end = None
             except ValueError:
                 verse = 0
@@ -1432,6 +1664,14 @@ async def gpt_explain_callback(callback: CallbackQuery, state: FSMContext = None
                                 InlineKeyboardButton(
                                     text="⬅️ Вернуться к отрывкам",
                                     callback_data="back_to_ai_verses"
+                                )
+                            ])
+                        elif data.get('from_calendar'):
+                            # Пользователь пришел из календаря
+                            all_buttons.append([
+                                InlineKeyboardButton(
+                                    text="⬅️ Назад к календарю",
+                                    callback_data="back_to_calendar"
                                 )
                             ])
                         else:
@@ -2095,6 +2335,13 @@ async def reading_plan_text(callback: CallbackQuery, state: FSMContext):
         await callback.answer()
 
 
+@router.message(F.text == "📅 Православный календарь")
+async def orthodox_calendar_menu(message: Message, state: FSMContext):
+    """Обработчик кнопки 'Православный календарь' в главном меню"""
+    from handlers.calendar import show_calendar_for_date
+    await show_calendar_for_date(message, state)
+
+
 @router.callback_query(F.data == "back_to_reading_plans")
 async def back_to_reading_plans(callback: CallbackQuery, state: FSMContext):
     """Возврат к списку планов чтения"""
@@ -2553,6 +2800,72 @@ async def reading_ai_callback(callback: CallbackQuery, state: FSMContext):
 
 
 # Обработчики для сохранения/удаления толкований
+@router.callback_query(F.data.startswith("save_complex_commentary_"))
+async def save_complex_commentary_callback(callback: CallbackQuery, state: FSMContext):
+    """Сохраняет разбор сложного чтения"""
+    try:
+        # Получаем данные из состояния
+        if not state:
+            await callback.answer("❌ Нет данных для сохранения", show_alert=True)
+            return
+
+        data = await state.get_data()
+        commentary_text = data.get('last_complex_commentary')
+        ref_parts = data.get('last_complex_references', [])
+        ai_type = data.get('last_complex_type', 'regular')
+
+        if not commentary_text or not ref_parts:
+            await callback.answer("❌ Не удалось найти текст разбора", show_alert=True)
+            return
+
+        logger.info(
+            f"Сохранение сложного разбора: тип={ai_type}, части={ref_parts}")
+
+        # Формируем описание для сложного чтения
+        references = []
+        for ref_part in ref_parts:
+            parts = ref_part.split("_")
+            if len(parts) == 4:
+                book_id, chapter, verse_start, verse_end = map(int, parts)
+                from utils.bible_data import bible_data
+                book_name = bible_data.get_book_name(book_id)
+                if book_name:
+                    if verse_start == verse_end:
+                        references.append(
+                            f"{book_name} {chapter}:{verse_start}")
+                    else:
+                        references.append(
+                            f"{book_name} {chapter}:{verse_start}-{verse_end}")
+
+        description = f"Сложное чтение: {'; '.join(references)}"
+
+        # Сохраняем в базу как специальный тип
+        from database.universal_manager import universal_db_manager as db_manager
+
+        result = await db_manager.save_commentary(
+            user_id=callback.from_user.id,
+            book_id=0,  # Специальное значение для сложных чтений
+            chapter_start=0,
+            chapter_end=0,
+            verse_start=0,
+            verse_end=0,
+            reference_text=description,  # Используем reference_text вместо description
+            commentary_text=commentary_text,
+            commentary_type=f"complex_{ai_type}"
+        )
+
+        if result:
+            await callback.answer("✅ Разбор сложного чтения сохранен!", show_alert=True)
+            logger.info(
+                f"Сложный разбор сохранен для пользователя {callback.from_user.id}")
+        else:
+            await callback.answer("❌ Ошибка сохранения", show_alert=True)
+
+    except Exception as e:
+        logger.error(f"Ошибка сохранения сложного разбора: {e}")
+        await callback.answer("❌ Ошибка сохранения разбора", show_alert=True)
+
+
 @router.callback_query(F.data.regexp(r'^save_commentary_(\d+)_(\d+)_(\d+)_(\d+)_(\d+)_(ai|lopukhin)$'))
 async def save_commentary_callback(callback: CallbackQuery, state: FSMContext):
     """Сохраняет толкование пользователя"""

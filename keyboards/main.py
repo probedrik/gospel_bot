@@ -11,9 +11,10 @@ import logging
 
 from utils.bible_data import bible_data
 from config.settings import ENABLE_WORD_SEARCH
+from services.ai_settings_manager import ai_settings_manager
 
 
-def get_main_keyboard() -> ReplyKeyboardMarkup:
+async def get_main_keyboard() -> ReplyKeyboardMarkup:
     """Создает и возвращает основную клавиатуру бота"""
     buttons = [
         [
@@ -23,11 +24,23 @@ def get_main_keyboard() -> ReplyKeyboardMarkup:
         [
             KeyboardButton(text="📝 Мои закладки"),
             KeyboardButton(text="🎯 Темы"),
-        ],
-        [
-            KeyboardButton(text="⚙️ Настройки"),
         ]
     ]
+
+    # Добавляем кнопку календаря если функция включена
+    try:
+        calendar_enabled = await ai_settings_manager.is_calendar_enabled()
+        if calendar_enabled:
+            buttons.append([
+                KeyboardButton(text="📅 Православный календарь"),
+            ])
+    except Exception:
+        # Если ошибка с настройками, не показываем календарь
+        pass
+
+    buttons.append([
+        KeyboardButton(text="⚙️ Настройки"),
+    ])
 
     # Добавляем кнопку поиска по слову только если функция включена
     if ENABLE_WORD_SEARCH:
@@ -156,8 +169,6 @@ def create_navigation_keyboard(has_previous: bool = False, has_next: bool = True
             buttons.append([navigation_buttons[0]])
         else:
             buttons.append(navigation_buttons)
-
-
 
     # Возврат в меню
     buttons.append([

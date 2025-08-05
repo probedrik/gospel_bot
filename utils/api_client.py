@@ -472,6 +472,17 @@ async def ask_gpt_explain(text: str) -> str:
             if 'LOG_OPENROUTER_RESPONSE' in globals() and LOG_OPENROUTER_RESPONSE:
                 logger.error(f"OpenRouter API raw response: {data}")
             try:
+                # Проверяем корректность ответа API
+                if "choices" not in data:
+                    logger.error(
+                        f"OpenRouter API вернул неожиданный ответ: {data}")
+                    return "Извините, API вернул некорректный ответ. Попробуйте позже."
+
+                if not data["choices"] or "message" not in data["choices"][0]:
+                    logger.error(
+                        f"OpenRouter API вернул пустой choices: {data}")
+                    return "Извините, API вернул пустой ответ. Попробуйте позже."
+
                 result = data["choices"][0]["message"]["content"].strip()
 
                 # Ограничиваем длину ответа для обычного ИИ
@@ -480,11 +491,12 @@ async def ask_gpt_explain(text: str) -> str:
 
                 _gpt_explain_cache[cache_key] = result
                 return result
-            except Exception:
+            except Exception as e:
+                logger.error(f"Ошибка обычного ИИ запроса: {e}")
                 return "Извините, не удалось получить объяснение от ИИ. Попробуйте позже."
 
 
-async def ask_gpt_explain_premium(text: str, max_tokens: int = PREMIUM_MAX_TOKENS_FULL) -> str:
+async def ask_gpt_explain_premium(text: str, max_tokens: int = PREMIUM_MAX_TOKENS_FULL, max_chars: int = AI_PREMIUM_MAX_CHARS) -> str:
     """
     Отправляет запрос к премиум OpenRouter API для более подробного объяснения стиха или главы.
     Использует более продвинутую модель и расширенную роль.
@@ -492,6 +504,7 @@ async def ask_gpt_explain_premium(text: str, max_tokens: int = PREMIUM_MAX_TOKEN
     Args:
         text: Текст для объяснения
         max_tokens: Максимальное количество токенов в ответе
+        max_chars: Максимальное количество символов в ответе
     """
     cache_key = f"premium_{max_tokens}_{text.strip().lower()}"  # Учитываем max_tokens в кэше
     if cache_key in _gpt_explain_cache:
@@ -519,11 +532,22 @@ async def ask_gpt_explain_premium(text: str, max_tokens: int = PREMIUM_MAX_TOKEN
                 if LOG_OPENROUTER_RESPONSE:
                     logger.info(f"Premium OpenRouter API response: {data}")
 
+                # Проверяем корректность ответа API
+                if "choices" not in data:
+                    logger.error(
+                        f"OpenRouter API вернул неожиданный ответ: {data}")
+                    return "Извините, API вернул некорректный ответ. Попробуйте позже."
+
+                if not data["choices"] or "message" not in data["choices"][0]:
+                    logger.error(
+                        f"OpenRouter API вернул пустой choices: {data}")
+                    return "Извините, API вернул пустой ответ. Попробуйте позже."
+
                 result = data["choices"][0]["message"]["content"].strip()
 
                 # Ограничиваем длину ответа для премиум ИИ
-                if len(result) > AI_PREMIUM_MAX_CHARS:
-                    result = result[:AI_PREMIUM_MAX_CHARS-3] + "..."
+                if len(result) > max_chars:
+                    result = result[:max_chars-3] + "..."
 
                 _gpt_explain_cache[cache_key] = result
                 return result
@@ -577,10 +601,22 @@ async def ask_gpt_bible_verses(problem_text: str) -> str:
             if 'LOG_OPENROUTER_RESPONSE' in globals() and LOG_OPENROUTER_RESPONSE:
                 logger.error(f"OpenRouter API raw response: {data}")
             try:
+                # Проверяем корректность ответа API
+                if "choices" not in data:
+                    logger.error(
+                        f"OpenRouter API вернул неожиданный ответ: {data}")
+                    return "Извините, API вернул некорректный ответ. Попробуйте позже."
+
+                if not data["choices"] or "message" not in data["choices"][0]:
+                    logger.error(
+                        f"OpenRouter API вернул пустой choices: {data}")
+                    return "Извините, API вернул пустой ответ. Попробуйте позже."
+
                 result = data["choices"][0]["message"]["content"].strip()
                 _gpt_explain_cache[cache_key] = result
                 return result
-            except Exception:
+            except Exception as e:
+                logger.error(f"Ошибка ИИ запроса для стихов: {e}")
                 return "Извините, не удалось получить рекомендации от ИИ. Попробуйте позже."
 
 
