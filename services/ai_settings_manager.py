@@ -250,7 +250,7 @@ class AISettingsManager:
         tropars = await self.get_setting('calendar_default_tropars', 0)
         scripture = await self.get_setting('calendar_default_scripture', 1)
         date_format = await self.get_setting('calendar_default_date_format', True)
-        
+
         return {
             'header': header if isinstance(header, bool) else (header == 'true'),
             # 4 = основные святые в одном параграфе
