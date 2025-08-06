@@ -30,19 +30,7 @@ async def create_settings_keyboard(user_id: int = None) -> InlineKeyboardMarkup:
         ]
     ]
 
-    # Добавляем кнопку календаря если функция включена
-    try:
-        calendar_enabled = await ai_settings_manager.is_calendar_enabled()
-        if calendar_enabled:
-            buttons.append([
-                InlineKeyboardButton(
-                    text="📅 Настройки календаря",
-                    callback_data="calendar_settings"
-                )
-            ])
-    except Exception:
-        # Если ошибка с настройками, пропускаем
-        pass
+    # Кнопка настроек календаря убрана для всех пользователей
 
     buttons.append([
         InlineKeyboardButton(
