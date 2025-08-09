@@ -87,7 +87,9 @@ def create_calendar_keyboard(current_date: datetime = None,
                 else:
                     # Обычное сложное чтение
                     button_text = f"📖 {first_ref['display_text']}..."
-                callback_data = f"scripture_read_complex_{'|'.join(ref_parts)}"
+                # Ограничиваем длину callback_data до 64 байт, как требует Telegram
+                raw_data = f"scripture_read_complex_{'|'.join(ref_parts)}"
+                callback_data = raw_data[:64]
 
                 reading_buttons.append(
                     InlineKeyboardButton(
@@ -98,10 +100,13 @@ def create_calendar_keyboard(current_date: datetime = None,
             else:
                 # Простое чтение с одной частью
                 ref = refs[0]
+                # Простое чтение: формируем и уменьшаем при необходимости
+                raw_simple = f"scripture_read_{ref['book_id']}_{ref['chapter']}_{ref['verse_start']}_{ref['verse_end']}"
+                simple_cb = raw_simple[:64]
                 reading_buttons.append(
                     InlineKeyboardButton(
                         text=f"📖 {ref['display_text']}",
-                        callback_data=f"scripture_read_{ref['book_id']}_{ref['chapter']}_{ref['verse_start']}_{ref['verse_end']}"
+                        callback_data=simple_cb
                     )
                 )
 

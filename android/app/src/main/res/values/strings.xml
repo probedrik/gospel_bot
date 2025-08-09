@@ -1,0 +1,48 @@
+<resources>
+    <string name="app_name">Библия</string>
+    
+    <!-- Navigation -->
+    <string name="nav_books">Книги</string>
+    <string name="nav_bookmarks">Закладки</string>
+    <string name="nav_search">Поиск</string>
+    <string name="nav_settings">Настройки</string>
+    
+    <!-- Books -->
+    <string name="books_title">Книги Библии</string>
+    <string name="old_testament">Ветхий Завет</string>
+    <string name="new_testament">Новый Завет</string>
+    <string name="chapters_count">%d глав</string>
+    
+    <!-- Reading -->
+    <string name="chapter_title">Глава %d</string>
+    <string name="ai_explanation">ИИ разбор</string>
+    <string name="ai_explanation_count">ИИ разбор (%d)</string>
+    <string name="add_bookmark">Добавить закладку</string>
+    <string name="verse_selected">Стих выбран</string>
+    
+    <!-- Bookmarks -->
+    <string name="bookmarks_title">Закладки</string>
+    <string name="no_bookmarks">У вас пока нет закладок</string>
+    <string name="delete_bookmark">Удалить закладку</string>
+    <string name="bookmark_note">Заметка</string>
+    
+    <!-- AI -->
+    <string name="ai_limit_reached">Достигнут дневной лимит ИИ запросов</string>
+    <string name="ai_loading">Получение объяснения...</string>
+    <string name="ai_error">Ошибка получения объяснения ИИ</string>
+    
+    <!-- Errors -->
+    <string name="error_loading_books">Ошибка загрузки книг</string>
+    <string name="error_loading_chapter">Ошибка загрузки главы</string>
+    <string name="error_adding_bookmark">Ошибка добавления закладки</string>
+    <string name="error_deleting_bookmark">Ошибка удаления закладки</string>
+    <string name="error_network">Ошибка сети</string>
+    <string name="error_unknown">Неизвестная ошибка</string>
+    
+    <!-- Common -->
+    <string name="loading">Загрузка...</string>
+    <string name="retry">Повторить</string>
+    <string name="close">Закрыть</string>
+    <string name="save">Сохранить</string>
+    <string name="cancel">Отмена</string>
+</resources>

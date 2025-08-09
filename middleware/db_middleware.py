@@ -130,7 +130,7 @@ class DatabaseMiddleware(BaseMiddleware):
             # Экстренное добавление объекта
             data["db"] = db_manager
 
-        # ГАРАНТИЯРОВАННО добавляем пользователя в БД для любого апдейта с user_id
+        # ГАРАНТИРОВАННО добавляем пользователя в БД для любого апдейта с user_id
         if user_id:
             try:
                 username = None

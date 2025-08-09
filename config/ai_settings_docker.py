@@ -23,7 +23,8 @@ LLM_ROLE = (
 
 # === ПРЕМИУМ ИИ (платные запросы) ===
 OPENROUTER_PREMIUM_API_KEY = os.getenv("OPENROUTER_PREMIUM_API_KEY", "")
-OPENROUTER_PREMIUM_MODEL = os.getenv("OPENROUTER_PREMIUM_MODEL", "google/gemini-2.5-flash-lite")
+OPENROUTER_PREMIUM_MODEL = os.getenv(
+    "OPENROUTER_PREMIUM_MODEL", "google/gemini-2.5-flash-lite")
 
 # Роль для премиум ИИ - более подробная и экспертная
 LLM_PREMIUM_ROLE = (

@@ -463,14 +463,18 @@ async def ask_gpt_explain(text: str) -> str:
             {"role": "system", "content": LLM_ROLE},
             {"role": "user", "content": text}
         ],
-        "max_tokens": DEFAULT_MAX_TOKENS,
         "temperature": 0.7
     }
     async with aiohttp.ClientSession() as session:
         async with session.post(url, headers=headers, json=payload) as resp:
             data = await resp.json()
             if 'LOG_OPENROUTER_RESPONSE' in globals() and LOG_OPENROUTER_RESPONSE:
-                logger.error(f"OpenRouter API raw response: {data}")
+                try:
+                    logger.info(
+                        f"OpenRouter regular raw: status={resp.status}, finish={data.get('choices', [{}])[0].get('finish_reason')}")
+                    logger.info(f"OpenRouter regular raw JSON: {data}")
+                except Exception:
+                    logger.info(f"OpenRouter regular raw (non-JSON): {data}")
             try:
                 # Проверяем корректность ответа API
                 if "choices" not in data:
@@ -484,10 +488,50 @@ async def ask_gpt_explain(text: str) -> str:
                     return "Извините, API вернул пустой ответ. Попробуйте позже."
 
                 result = data["choices"][0]["message"]["content"].strip()
+                if LOG_OPENROUTER_RESPONSE:
+                    try:
+                        logger.info(
+                            f"OpenRouter regular initial: len={len(result)}, finish={data.get('choices', [{}])[0].get('finish_reason')}, usage={data.get('usage')}"
+                        )
+                    except Exception:
+                        pass
 
-                # Ограничиваем длину ответа для обычного ИИ
-                if len(result) > AI_REGULAR_MAX_CHARS:
-                    result = result[:AI_REGULAR_MAX_CHARS-3] + "..."
+                # Если модель остановилась по длине — запрашиваем продолжения (до 5 раз)
+                finish_reason = data["choices"][0].get(
+                    "finish_reason") or data["choices"][0].get("stop_reason")
+                attempts = 0
+                while finish_reason == "length" and attempts < 5:
+                    attempts += 1
+                    cont_payload = {
+                        "model": OPENROUTER_MODEL,
+                        "messages": [
+                            {"role": "system", "content": LLM_ROLE},
+                            {"role": "user", "content": text},
+                            {"role": "assistant", "content": result},
+                            {"role": "user",
+                                "content": "Продолжи с места остановки и заверши мысль."}
+                        ],
+                        "max_tokens": max(128, DEFAULT_MAX_TOKENS // 2),
+                        "temperature": 0.7
+                    }
+                    async with session.post(url, headers=headers, json=cont_payload) as r2:
+                        d2 = await r2.json()
+                        if "choices" in d2 and d2["choices"]:
+                            chunk = d2["choices"][0]["message"]["content"].strip()
+                            result += "\n" + chunk
+                            finish_reason = d2["choices"][0].get(
+                                "finish_reason") or d2["choices"][0].get("stop_reason")
+                            if LOG_OPENROUTER_RESPONSE:
+                                try:
+                                    logger.info(
+                                        f"OpenRouter regular continue[{attempts}]: len_chunk={len(chunk)}, total_len={len(result)}, finish={finish_reason}, usage={d2.get('usage')}"
+                                    )
+                                except Exception:
+                                    pass
+                        else:
+                            break
+
+                # Не обрезаем результат — отправим полностью, дальнейшее деление сделаем на этапе отправки
 
                 _gpt_explain_cache[cache_key] = result
                 return result
@@ -521,8 +565,8 @@ async def ask_gpt_explain_premium(text: str, max_tokens: int = PREMIUM_MAX_TOKEN
             {"role": "system", "content": LLM_PREMIUM_ROLE},
             {"role": "user", "content": text}
         ],
-        "max_tokens": max_tokens,
-        "temperature": 0.6   # Немного меньше температура для более точных ответов
+        "temperature": 0.6,   # Немного меньше температура для более точных ответов
+        "top_p": 0.95
     }
 
     try:
@@ -530,7 +574,13 @@ async def ask_gpt_explain_premium(text: str, max_tokens: int = PREMIUM_MAX_TOKEN
             async with session.post(url, headers=headers, json=payload) as resp:
                 data = await resp.json()
                 if LOG_OPENROUTER_RESPONSE:
-                    logger.info(f"Premium OpenRouter API response: {data}")
+                    try:
+                        logger.info(
+                            f"OpenRouter premium raw: status={resp.status}, finish={data.get('choices', [{}])[0].get('finish_reason')}")
+                        logger.info(f"OpenRouter premium raw JSON: {data}")
+                    except Exception:
+                        logger.info(
+                            f"OpenRouter premium raw (non-JSON): {data}")
 
                 # Проверяем корректность ответа API
                 if "choices" not in data:
@@ -544,11 +594,53 @@ async def ask_gpt_explain_premium(text: str, max_tokens: int = PREMIUM_MAX_TOKEN
                     return "Извините, API вернул пустой ответ. Попробуйте позже."
 
                 result = data["choices"][0]["message"]["content"].strip()
+                if LOG_OPENROUTER_RESPONSE:
+                    try:
+                        logger.info(
+                            f"OpenRouter premium initial: len={len(result)}, finish={data.get('choices', [{}])[0].get('finish_reason')}, usage={data.get('usage')}"
+                        )
+                    except Exception:
+                        pass
 
-                # Ограничиваем длину ответа для премиум ИИ
-                if len(result) > max_chars:
-                    result = result[:max_chars-3] + "..."
+                # Если модель обрезала по длине — делаем продолжения (до 5 раз)
+                finish_reason = data["choices"][0].get(
+                    "finish_reason") or data["choices"][0].get("stop_reason")
+                attempts = 0
+                while finish_reason == "length" and attempts < 5:
+                    attempts += 1
+                    cont_payload = {
+                        "model": OPENROUTER_PREMIUM_MODEL,
+                        "messages": [
+                            {"role": "system", "content": LLM_PREMIUM_ROLE},
+                            {"role": "user", "content": text},
+                            {"role": "assistant", "content": result},
+                            {"role": "user", "content": "Продолжи с места остановки и завершай выводом."}
+                        ],
+                        "max_tokens": max(150, max_tokens // 2),
+                        "temperature": 0.6,
+                        "top_p": 0.95
+                    }
+                    async with session.post(url, headers=headers, json=cont_payload) as r2:
+                        d2 = await r2.json()
+                        if "choices" in d2 and d2["choices"]:
+                            result += "\n" + \
+                                d2["choices"][0]["message"]["content"].strip()
+                            finish_reason = d2["choices"][0].get(
+                                "finish_reason") or d2["choices"][0].get("stop_reason")
+                            if LOG_OPENROUTER_RESPONSE:
+                                try:
+                                    logger.info(
+                                        f"OpenRouter premium continue[{attempts}]: len_chunk={len(d2['choices'][0]['message']['content'])}, total_len={len(result)}, finish={finish_reason}, usage={d2.get('usage')}"
+                                    )
+                                except Exception:
+                                    pass
+                        else:
+                            break
 
+                # Не обрезаем результат — отправим полностью, дальнейшее деление сделаем на этапе отправки
+
+                if LOG_OPENROUTER_RESPONSE:
+                    logger.info(f"OpenRouter premium final len={len(result)}")
                 _gpt_explain_cache[cache_key] = result
                 return result
 

@@ -32,6 +32,8 @@ class SupabaseManager:
                 "SUPABASE_URL и SUPABASE_KEY должны быть установлены")
 
         # Создаем клиент Supabase
+        # ВАЖНО: Для бота используйте SERVICE ROLE KEY (SUPABASE_KEY)
+        # Service role имеет bypass RLS и позволит включить RLS для безопасности
         self.client: Client = create_client(self.url, self.key)
 
         logger.info(f"Инициализация Supabase: {self.url}")
@@ -77,8 +79,11 @@ class SupabaseManager:
             }
 
             # Используем upsert для избежания конфликтов
-            result = self.client.table('users').upsert(data).execute()
-            return len(result.data) > 0
+            # В supabase-py ответ может не содержать data при return=minimal,
+            # поэтому считаем успехом сам факт отсутствия исключения
+            self.client.table('users').upsert(
+                data, on_conflict="user_id").execute()
+            return True
         except Exception as e:
             logger.error(f"Ошибка добавления пользователя {user_id}: {e}")
             return False

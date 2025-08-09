@@ -45,6 +45,8 @@ router = Router()
 # Словарь для хранения состояния поиска
 user_search_state = {}
 
+# (Удалено) Приветствие до /start — возвращаем прежнюю логику кнопок
+
 # Счетчик ИИ-запросов: user_id -> {'count': int, 'date': date}
 _ai_daily_counter = {}
 
@@ -1519,14 +1521,10 @@ async def gpt_explain_callback(callback: CallbackQuery, state: FSMContext = None
         title = "🤖 Разбор от ИИ"
 
     try:
-        # Очищаем ответ ИИ от HTML тегов которые могут нарушить структуру
+        # Очищаем ответ ИИ от HTML тегов и сразу формируем цитату
         import re
-        # Удаляем все HTML теги
-        cleaned_response = re.sub(r'<[^>]*>', '', response)
-        cleaned_response = cleaned_response.strip()
-
-        formatted, opts = format_ai_or_commentary(
-            cleaned_response, title=title)
+        cleaned_response = re.sub(r'<[^>]*>', '', response).strip()
+        formatted, _ = format_ai_or_commentary(cleaned_response, title=title)
 
         # Проверяем, есть ли уже сохраненное толкование (ОПТИМИЗИРОВАННО)
         from database.universal_manager import universal_db_manager as db_manager
@@ -1627,7 +1625,7 @@ async def gpt_explain_callback(callback: CallbackQuery, state: FSMContext = None
                     keyboard = create_navigation_keyboard(
                         has_previous, has_next, is_bookmarked, action_buttons + save_buttons)
 
-                    msg = await callback.message.answer(part, reply_markup=keyboard, **opts)
+                    msg = await callback.message.answer(part, reply_markup=keyboard, parse_mode="HTML")
                 else:  # Для стиха - только кнопки действий
                     # Получаем русское сокращение книги для callback
                     ru_book_abbr = None
@@ -1686,9 +1684,9 @@ async def gpt_explain_callback(callback: CallbackQuery, state: FSMContext = None
                     if all_buttons:
                         keyboard = InlineKeyboardMarkup(
                             inline_keyboard=all_buttons)
-                        msg = await callback.message.answer(part, reply_markup=keyboard, **opts)
+                        msg = await callback.message.answer(part, reply_markup=keyboard, parse_mode="HTML")
                     else:
-                        msg = await callback.message.answer(part, **opts)
+                        msg = await callback.message.answer(part, parse_mode="HTML")
 
                 # Возвращаем кнопку "🤖 Разбор от ИИ" обратно после загрузки (только для последней части)
                 try:
@@ -1731,7 +1729,7 @@ async def gpt_explain_callback(callback: CallbackQuery, state: FSMContext = None
                     )
             else:
                 # Первые части без кнопок
-                msg = await callback.message.answer(part, **opts)
+                msg = await callback.message.answer(part, parse_mode="HTML")
     except Exception as e:
         logger.error(f"Ошибка при обращении к ИИ: {e}")
         await callback.message.answer("Произошла ошибка при обращении к ИИ. Попробуйте позже.")

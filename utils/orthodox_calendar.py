@@ -159,9 +159,12 @@ class OrthodoxyCalendar:
             params['scripture'] = int(scripture_setting) if scripture_setting in [
                 0, 1, 2] else 1
 
-        # Отладочный вывод настроек и параметров
-        logger.info(f"Настройки полученные в get_calendar_data: {settings}")
-        logger.info(f"Параметры запроса к календарю: {params}")
+        # Отладочный вывод (можно отключить переменной окружения CALENDAR_LOG_VERBOSE)
+        import os
+        if os.getenv('CALENDAR_LOG_VERBOSE', '0') in ('1', 'true', 'yes'):
+            logger.info(
+                f"Настройки полученные в get_calendar_data: {settings}")
+            logger.info(f"Параметры запроса к календарю: {params}")
 
         try:
             session = await self.get_session()
@@ -172,10 +175,11 @@ class OrthodoxyCalendar:
                     # Сохраняем в кэш
                     self._cache[cache_key] = (html_content, datetime.now())
 
-                    logger.info(
-                        f"Календарь успешно получен для {date.strftime('%Y-%m-%d')}")
-                    logger.info(
-                        f"Первые 500 символов ответа: {html_content[:500]}")
+                    if os.getenv('CALENDAR_LOG_VERBOSE', '0') in ('1', 'true', 'yes'):
+                        logger.info(
+                            f"Календарь успешно получен для {date.strftime('%Y-%m-%d')}")
+                        logger.info(
+                            f"Первые 500 символов ответа: {html_content[:500]}")
                     return html_content
                 else:
                     logger.error(
@@ -236,16 +240,30 @@ class OrthodoxyCalendar:
         saints_match = re.search(saints_pattern, clean_content, re.DOTALL)
 
         if saints_match:
-            saints_text = saints_match.group(1).strip()
+            saints_block = saints_match.group(1).strip()
 
-            # Удаляем все HTML теги
-            saints_clean = re.sub(r'<[^>]+>', '', saints_text)
+            # Сохраняем логические разделители перед удалением тегов
+            saints_block = saints_block.replace('<br>', '\n').replace(
+                '<br/>', '\n').replace('<br />', '\n')
+            saints_block = re.sub(r'</p\s*>', '\n', saints_block)
 
-            # Убираем переносы строк и лишние пробелы
-            saints_clean = re.sub(r'\s+', ' ', saints_clean).strip()
+            # Удаляем остальные теги и нормализуем переносы строк
+            saints_block = re.sub(r'<[^>]+>', '', saints_block)
+            saints_block = saints_block.replace('\r', '')
+            # Убираем последовательности пустых строк
+            saints_block = re.sub(r'\n\s*\n+', '\n', saints_block)
 
-            # Используем более умное разделение - ищем записи разделенные точкой + пробел + заглавная буква + характерное начало
-            # Характерные начала записей о святых
+            # Базовое разбиение: по строкам и по маркерам
+            raw_lines = []
+            for raw in saints_block.split('\n'):
+                s = raw.strip()
+                if not s:
+                    continue
+                # Удаляем маркерный символ в начале строки (только если он в начале)
+                s = re.sub(r'^\s*[•*]\s*', '', s)
+                raw_lines.append(s)
+
+            # Характерные начала записей о святых — используем для дополнительного деления по предложениям
             saint_patterns = [
                 r'Славного', r'Святого', r'Святой', r'Святых',
                 r'Преподобного', r'Преподобной', r'Преподобных',
@@ -260,33 +278,51 @@ class OrthodoxyCalendar:
                 r'Великомученика', r'Великомучеников', r'Великомученицы',
                 r'[А-ЯЁ][а-яё]*(\s+и\s+[А-ЯЁ][а-яё]*)*\s+(пресвитера|диакона|епископа|архиепископа|митрополита)'
             ]
+            # Делим по точке и пробелу перед характерным началом, НО сохраняем сокращения (напр. "еп.")
+            # Сначала временно помечаем известные сокращения, чтобы точка в них не считалась разделителем
+            protected = (
+                s
+                .replace('еп.', 'еп§')
+                .replace('епископа.', 'епископа§')
+                .replace('архиеп.', 'архиеп§')
+                .replace('митр.', 'митр§')
+                .replace('сщмч.', 'сщмч§')
+                .replace('прп.', 'прп§')
+                .replace('мч.', 'мч§')
+            )
+            # шаблон разделения
+            dot_split_pattern = r'\.\s+(?=' + '|'.join(saint_patterns) + ')'
 
-            pattern = r'\.\s+(?=' + '|'.join(saint_patterns) + ')'
-            saint_entries = re.split(pattern, saints_clean)
-
-            for entry in saint_entries:
-                # Проверяем что entry не None
-                if entry is None:
-                    continue
-
-                clean_entry = entry.strip()
-
-                # Убираем лишние символы в начале
-                clean_entry = re.sub(r'^\s*[.\s]*', '', clean_entry)
-
-                # Фильтруем записи
-                if (clean_entry and
-                    len(clean_entry) > 15 and  # Увеличили минимальную длину
-                    not clean_entry.isspace() and
-                    not clean_entry.startswith('Седмица') and
-                        not clean_entry.startswith('Глас')):
-
-                    # Добавляем точку в конце если её нет
-                    if not clean_entry.endswith('.'):
-                        clean_entry += '.'
-
-                    logger.info(f"Добавляем в saints: {clean_entry}")
-                    result['saints'].append(clean_entry)
+            for line in raw_lines:
+                # Дополнительное деление по предложениям, если в строке несколько святых
+                # Применяем к защищенному тексту для корректного сплита
+                protected_line = (
+                    line
+                    .replace('еп.', 'еп§')
+                    .replace('епископа.', 'епископа§')
+                    .replace('архиеп.', 'архиеп§')
+                    .replace('митр.', 'митр§')
+                    .replace('сщмч.', 'сщм§')
+                    .replace('прп.', 'прп§')
+                    .replace('мч.', 'мч§')
+                )
+                pieces = re.split(dot_split_pattern, protected_line)
+                for piece in pieces:
+                    if piece is None:
+                        continue
+                    entry = piece.strip().replace('§', '.')
+                    if not entry:
+                        continue
+                    # Убираем лишние символы в начале
+                    entry = re.sub(r'^\s*[.\s]*', '', entry)
+                    # Фильтр от технических строк и слишком коротких обрывков типа "Сщмч."
+                    if (len(entry) > 10 and
+                        not entry.startswith('Седмица') and
+                            not entry.startswith('Глас')):
+                        if not entry.endswith('.'):
+                            entry += '.'
+                        logger.info(f"Добавляем в saints: {entry}")
+                        result['saints'].append(entry)
 
         # Ищем чтения дня
         scripture_pattern = r'<p class="pscriptureheader"[^>]*>.*?</p>\s*(.*?)\s*(?:<p class="ptroparionheader"|$)'

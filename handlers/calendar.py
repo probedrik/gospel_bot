@@ -255,73 +255,76 @@ async def scripture_read_complex(callback: CallbackQuery, state: FSMContext):
         # Объединяем все тексты
         combined_text = "\n\n━━━━━━━━━━━━━━━━━━━━━━━━━\n\n".join(all_texts)
 
-        parse_mode = get_verses_parse_mode()
-        for part in split_text(combined_text):
-            await callback.message.answer(part, parse_mode=parse_mode)
-
-        # Создаем кнопки действий
-        # Если все части из одной книги, используем первую для кнопок
+        # Формируем новую клавиатуру под текстом (без отдельного сообщения)
+        kb_rows = []
         if len(combined_book_ids) == 1:
             book_id = list(combined_book_ids)[0]
-            chapter = list(combined_chapters)[0] if len(
-                combined_chapters) == 1 else min(combined_chapters)
+            # Главы, участвующие в сложном чтении
+            chapters_sorted = sorted(combined_chapters)
 
-            from utils.bible_data import create_chapter_action_buttons, get_english_book_abbreviation
+            # Ряд: ИИ + открыть первую главу
+            main_row = []
             from config.ai_settings import ENABLE_GPT_EXPLAIN
-
-            en_book = get_english_book_abbreviation(book_id)
-
-            all_buttons = []
-
-            # Добавляем кнопку для каждой главы если несколько глав
-            if len(combined_chapters) > 1:
-                for ch in sorted(combined_chapters):
-                    ru_book_abbr = None
-                    for abbr, b_id in bible_data.book_abbr_dict.items():
-                        if b_id == book_id:
-                            ru_book_abbr = abbr
-                            break
-
-                    if ru_book_abbr:
-                        all_buttons.append([
-                            InlineKeyboardButton(
-                                text=f"📖 Открыть главу {ch}",
-                                callback_data=f"open_chapter_{ru_book_abbr}_{ch}"
-                            )
-                        ])
-
-            # Создаем специальную кнопку ИИ разбора для сложного чтения
             if ENABLE_GPT_EXPLAIN:
-                # Формируем данные всех частей для передачи в ИИ
                 complex_parts = []
                 for ref_part in ref_parts:
-                    parts = ref_part.split("_")
-                    if len(parts) == 4:
+                    parts_arr = ref_part.split("_")
+                    if len(parts_arr) == 4:
                         complex_parts.append(ref_part)
-
                 if complex_parts:
-                    all_buttons.append([
-                        InlineKeyboardButton(
-                            text="🤖 Разбор сложного чтения от ИИ",
-                            callback_data=f"gpt_explain_complex_{'|'.join(complex_parts)}"
-                        )
-                    ])
+                    main_row.append(InlineKeyboardButton(
+                        text="🤖 Разбор сложного чтения от ИИ",
+                        callback_data=f"gpt_explain_complex_{'|'.join(complex_parts)}"
+                    ))
+            # Открыть первую главу
+            ru_book_abbr = None
+            for abbr, b_id in bible_data.book_abbr_dict.items():
+                if b_id == book_id:
+                    ru_book_abbr = abbr
+                    break
+            if ru_book_abbr and chapters_sorted:
+                first_ch = chapters_sorted[0]
+                main_row.append(InlineKeyboardButton(
+                    text=f"📖 Открыть главу {first_ch}",
+                    callback_data=f"open_chapter_{ru_book_abbr}_{first_ch}"
+                ))
+            if main_row:
+                kb_rows.append(main_row)
 
-            # Добавляем стандартные кнопки действий только для первой главы (без ИИ разбора)
-            action_buttons = await create_chapter_action_buttons(
-                book_id, chapter, en_book, user_id=callback.from_user.id,
-                exclude_ai=True  # Исключаем стандартную кнопку ИИ
+            # Остальные главы отдельными строками
+            for ch in chapters_sorted[1:]:
+                kb_rows.append([
+                    InlineKeyboardButton(
+                        text=f"📖 Открыть главу {ch}",
+                        callback_data=f"open_chapter_{ru_book_abbr}_{ch}"
+                    )
+                ])
+
+            # Кнопки из стандартного набора (закладка и т.п.), без ИИ
+            from utils.bible_data import create_chapter_action_buttons, get_english_book_abbreviation
+            en_book = get_english_book_abbreviation(book_id)
+            extra_rows = await create_chapter_action_buttons(
+                book_id, chapters_sorted[0], en_book, user_id=callback.from_user.id,
+                exclude_ai=True
             )
+            if extra_rows:
+                kb_rows.extend(extra_rows)
 
-            if action_buttons:
-                all_buttons.extend(action_buttons)
+        # Ряд Назад в календарь всегда
+        kb_rows.append([InlineKeyboardButton(
+            text="⬅️ Назад в календарь", callback_data="back_to_calendar")])
 
-            if all_buttons:
+        parse_mode = get_verses_parse_mode()
+        parts = list(split_text(combined_text))
+        for i, part in enumerate(parts):
+            if i == len(parts) - 1:
                 await callback.message.answer(
-                    "Выберите действие:",
-                    reply_markup=InlineKeyboardMarkup(
-                        inline_keyboard=all_buttons)
+                    part,
+                    parse_mode=parse_mode,
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows)
                 )
+            else:
+                await callback.message.answer(part, parse_mode=parse_mode)
 
         logger.info("Сложное чтение показано успешно")
         await callback.answer()
@@ -379,41 +382,43 @@ async def scripture_read(callback: CallbackQuery, state: FSMContext):
         text, meta = await get_verse_by_reference(state, reference)
 
         parse_mode = get_verses_parse_mode()
-        for part in split_text(text):
-            await callback.message.answer(part, parse_mode=parse_mode)
-
-        ru_book_abbr = None
-        for abbr, b_id in bible_data.book_abbr_dict.items():
-            if b_id == book_id:
-                ru_book_abbr = abbr
-                break
-
-        en_book = get_english_book_abbreviation(book_id)
-        action_buttons = await create_chapter_action_buttons(
-            book_id, chapter, en_book, user_id=callback.from_user.id,
-            verse_start=verse_start, verse_end=verse_end
-        )
-
-        all_buttons = []
-        if ru_book_abbr:
-            open_chapter_button = [
-                InlineKeyboardButton(
+        parts = list(split_text(text))
+        for i, part in enumerate(parts):
+            if i == len(parts) - 1:
+                # Последняя часть: в одну строку Разбор ИИ + Открыть главу, и ряд "Назад в календарь"
+                row_main = []
+                from config.ai_settings import ENABLE_GPT_EXPLAIN
+                if ENABLE_GPT_EXPLAIN:
+                    en_book = get_english_book_abbreviation(book_id)
+                    verse_cb = f"{verse_start}_{verse_end}" if verse_start != verse_end else str(
+                        verse_start)
+                    row_main.append(InlineKeyboardButton(
+                        text="🤖 Разбор от ИИ",
+                        callback_data=f"gpt_explain_{en_book}_{chapter}_{verse_cb}"
+                    ))
+                # Открыть всю главу
+                ru_book_abbr = None
+                for abbr, b_id in bible_data.book_abbr_dict.items():
+                    if b_id == book_id:
+                        ru_book_abbr = abbr
+                        break
+                row_main.append(InlineKeyboardButton(
                     text="📖 Открыть всю главу",
                     callback_data=f"open_chapter_{ru_book_abbr}_{chapter}"
+                ))
+                # Назад в календарь
+                row_back = [InlineKeyboardButton(
+                    text="⬅️ Назад в календарь", callback_data="back_to_calendar")]
+                await callback.message.answer(
+                    part,
+                    parse_mode=parse_mode,
+                    reply_markup=InlineKeyboardMarkup(
+                        inline_keyboard=[row_main, row_back])
                 )
-            ]
-            all_buttons.append(open_chapter_button)
+            else:
+                await callback.message.answer(part, parse_mode=parse_mode)
 
-        if action_buttons:
-            all_buttons.extend(action_buttons)
-
-        if all_buttons:
-            await callback.message.answer(
-                "Выберите действие:",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=all_buttons)
-            )
-        else:
-            logger.warning("Не удалось создать кнопки для чтения")
+        # Старую дополнительную клавиатуру не отправляем — все нужные кнопки уже добавлены под текстом
 
         logger.info("Чтение показано успешно")
         await callback.answer()
