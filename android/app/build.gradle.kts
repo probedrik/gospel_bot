@@ -11,6 +11,16 @@ android {
     namespace = "com.bibleapp"
     compileSdk = 34
 
+    // Load secrets from local.properties
+    val localProps = java.util.Properties()
+    val localPropsFile = rootProject.file("local.properties")
+    if (localPropsFile.exists()) {
+        localProps.load(localPropsFile.inputStream())
+    }
+    val SUPABASE_URL: String = localProps.getProperty("SUPABASE_URL", "")
+    val SUPABASE_ANON_KEY: String = localProps.getProperty("SUPABASE_ANON_KEY", "")
+    val OPENROUTER_API_KEY: String = localProps.getProperty("OPENROUTER_API_KEY", "")
+
     defaultConfig {
         applicationId = "com.bibleapp"
         minSdk = 24
@@ -22,6 +32,11 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+
+        // Expose secrets via BuildConfig (kept out of VCS via local.properties)
+        buildConfigField("String", "SUPABASE_URL", "\"$SUPABASE_URL\"")
+        buildConfigField("String", "SUPABASE_ANON_KEY", "\"$SUPABASE_ANON_KEY\"")
+        buildConfigField("String", "OPENROUTER_API_KEY", "\"$OPENROUTER_API_KEY\"")
     }
 
     buildTypes {

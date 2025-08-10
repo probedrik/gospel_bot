@@ -1,5 +1,6 @@
 package com.bibleapp.di
 
+import com.bibleapp.BuildConfig
 import com.bibleapp.data.network.OpenRouterAPI
 import com.bibleapp.utils.Constants
 import dagger.Module
@@ -27,7 +28,7 @@ object NetworkModule {
             .addInterceptor(loggingInterceptor)
             .addInterceptor { chain ->
                 val request = chain.request().newBuilder()
-                    .addHeader("Authorization", "Bearer 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")
+                    .addHeader("Authorization", "Bearer ${BuildConfig.OPENROUTER_API_KEY}")
                     .addHeader("Content-Type", "application/json")
                     .build()
                 chain.proceed(request)
