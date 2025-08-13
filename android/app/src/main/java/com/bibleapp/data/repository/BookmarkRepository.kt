@@ -3,6 +3,7 @@ package com.bibleapp.data.repository
 import com.bibleapp.data.models.Bookmark
 import com.bibleapp.data.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.from
+import io.github.jan.supabase.postgrest.query.Columns
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import javax.inject.Inject
@@ -21,9 +22,9 @@ class BookmarkRepository @Inject constructor(
             val userId = userRepository.getCurrentUserId()
             if (userId != null) {
                 val bookmarks = client.from("bookmarks")
-                    .select()
-                    .eq("user_id", userId)
-                    .order("created_at", ascending = false)
+                    .select(columns = Columns.list("*"))
+                    .eq(column = "user_id", value = userId)
+                    .order(column = "created_at", ascending = false)
                     .decodeList<Bookmark>()
                 emit(bookmarks)
             } else {
@@ -78,8 +79,8 @@ class BookmarkRepository @Inject constructor(
                             "display_text" to bookmark.displayText
                         )
                     )
-                    .eq("id", bookmark.id)
-                    .eq("user_id", userId)
+                    .eq(column = "id", value = bookmark.id)
+                    .eq(column = "user_id", value = userId)
                 true
             } else {
                 false
@@ -96,8 +97,8 @@ class BookmarkRepository @Inject constructor(
             if (bookmark.id != null && bookmark.userId == userId) {
                 client.from("bookmarks")
                     .delete()
-                    .eq("id", bookmark.id)
-                    .eq("user_id", userId)
+                    .eq(column = "id", value = bookmark.id)
+                    .eq(column = "user_id", value = userId)
                 true
             } else {
                 false
@@ -118,19 +119,19 @@ class BookmarkRepository @Inject constructor(
             val userId = userRepository.getCurrentUserId() ?: return false
             
             var query = client.from("bookmarks")
-                .select("id")
-                .eq("user_id", userId)
-                .eq("book_id", bookId)
-                .eq("chapter_start", chapterStart)
+                .select(columns = Columns.list("id"))
+                .eq(column = "user_id", value = userId)
+                .eq(column = "book_id", value = bookId)
+                .eq(column = "chapter_start", value = chapterStart)
 
             if (chapterEnd != null) {
-                query = query.eq("chapter_end", chapterEnd)
+                query = query.eq(column = "chapter_end", value = chapterEnd)
             }
             if (verseStart != null) {
-                query = query.eq("verse_start", verseStart)
+                query = query.eq(column = "verse_start", value = verseStart)
             }
             if (verseEnd != null) {
-                query = query.eq("verse_end", verseEnd)
+                query = query.eq(column = "verse_end", value = verseEnd)
             }
 
             val result = query.decodeList<Map<String, Any>>()

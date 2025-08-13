@@ -6,6 +6,7 @@ import com.bibleapp.data.network.Message
 import com.bibleapp.data.network.OpenRouterAPI
 import com.bibleapp.data.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.from
+import io.github.jan.supabase.postgrest.query.Columns
 import java.time.LocalDate
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -46,9 +47,9 @@ class AIRepository @Inject constructor(
         return try {
             val today = LocalDate.now().toString()
             val result = client.from("ai_usage")
-                .select("count")
-                .eq("user_id", userId)
-                .eq("date", today)
+                .select(columns = Columns.list("count"))
+                .eq(column = "user_id", value = userId)
+                .eq(column = "date", value = today)
                 .decodeSingleOrNull<Map<String, Int>>()
             
             result?.get("count") ?: 0
@@ -68,9 +69,9 @@ class AIRepository @Inject constructor(
             
             // Проверяем существующую запись
             val existing = client.from("ai_usage")
-                .select("count")
-                .eq("user_id", userId)
-                .eq("date", today)
+                .select(columns = Columns.list("count"))
+                .eq(column = "user_id", value = userId)
+                .eq(column = "date", value = today)
                 .decodeSingleOrNull<Map<String, Int>>()
 
             if (existing != null) {
@@ -78,8 +79,8 @@ class AIRepository @Inject constructor(
                 val newCount = existing["count"]!! + 1
                 client.from("ai_usage")
                     .update(mapOf("count" to newCount))
-                    .eq("user_id", userId)
-                    .eq("date", today)
+                    .eq(column = "user_id", value = userId)
+                    .eq(column = "date", value = today)
             } else {
                 // Создаем новую запись
                 client.from("ai_usage")

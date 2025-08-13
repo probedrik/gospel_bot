@@ -3,8 +3,10 @@
 """
 import logging
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, InlineKeyboardButton
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
+# from aiogram.fsm.state import State, StatesGroup  # Отключено для стабильности
 from keyboards.settings import (
     create_settings_keyboard,
     create_admin_settings_keyboard,
@@ -22,6 +24,12 @@ from config.ai_settings import PREMIUM_AI_PACKAGE_PRICE, PREMIUM_AI_PACKAGE_REQU
 
 logger = logging.getLogger(__name__)
 router = Router()
+
+
+# Класс состояний и обработчик произвольной суммы отключены для стабильности
+# class DonationStates(StatesGroup):
+#     """Состояния для ввода суммы пожертвования"""
+#     waiting_for_amount = State()
 
 
 # Диагностический обработчик убран
@@ -290,7 +298,10 @@ async def settings_help(callback: CallbackQuery, state: FSMContext):
         "`/random` — Случайный стих\n"
         "`/bookmarks` — Ваши закладки\n\n"
 
-        "💡 **Совет:** Просто напишите ссылку на стих в чат!"
+        "💡 **Совет:** Просто напишите ссылку на стих в чат!\n\n"
+
+        "🆘 **Поддержка:**\n"
+        "По всем вопросам обращайтесь: `@Const_AI`"
     )
 
     keyboard = await create_settings_keyboard(callback.from_user.id)
@@ -423,29 +434,69 @@ async def admin_ai_settings(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-# Премиум доступ к ИИ
-@router.callback_query(F.data == "ai_premium_access")
-async def ai_premium_access(callback: CallbackQuery, state: FSMContext):
-    """Показывает информацию о премиум доступе к ИИ"""
-    keyboard = create_premium_ai_keyboard()
-    premium_text = await get_premium_info_text()
-
-    await callback.message.edit_text(
-        premium_text,
-        reply_markup=keyboard,
-        parse_mode="Markdown"
-    )
-    await callback.answer()
-
-
 @router.callback_query(F.data == "buy_premium_ai_50")
 async def buy_premium_ai_50(callback: CallbackQuery, state: FSMContext):
     """Покупка 50 премиум запросов"""
-    # TODO: Интеграция с ЮKassa
-    await callback.answer(
-        "💳 Оплата временно недоступна. Функция в разработке.",
-        show_alert=True
+    from services.payment_service import payment_service
+    from config.ai_settings import PREMIUM_REQUESTS_50, PREMIUM_PRICE_50
+
+    user_id = callback.from_user.id
+
+    # Проверяем, настроена ли ЮKassa
+    if not payment_service.is_enabled():
+        await callback.answer(
+            "💳 Оплата временно недоступна. ЮKassa не настроена.\n"
+            "Обратитесь к администратору.",
+            show_alert=True
+        )
+        return
+
+    # Создаем платеж
+    payment_data = await payment_service.create_premium_payment(
+        user_id=user_id,
+        requests_count=PREMIUM_REQUESTS_50,
+        amount=PREMIUM_PRICE_50
     )
+
+    if not payment_data:
+        await callback.answer(
+            "❌ Ошибка создания платежа. Попробуйте позже.",
+            show_alert=True
+        )
+        return
+
+    # Отправляем ссылку на оплату
+    payment_text = (
+        f"💳 **Оплата премиум запросов**\n\n"
+        f"📊 **Детали покупки:**\n"
+        f"• Количество запросов: {PREMIUM_REQUESTS_50}\n"
+        f"• Стоимость: {PREMIUM_PRICE_50}₽\n\n"
+        f"🔒 **Безопасность:**\n"
+        f"• Оплата через ЮKassa\n"
+        f"• Защищенное соединение\n"
+        f"• Поддержка всех карт\n\n"
+        f"👆 **Нажмите кнопку ниже для оплаты**"
+    )
+
+    # Создаем клавиатуру с кнопкой оплаты
+    keyboard = InlineKeyboardBuilder()
+    keyboard.add(InlineKeyboardButton(
+        text="💳 Оплатить",
+        url=payment_data["confirmation_url"]
+    ))
+    keyboard.add(InlineKeyboardButton(
+        text="◀️ Назад",
+        callback_data="premium_ai_info"
+    ))
+    keyboard.adjust(1)
+
+    await callback.message.edit_text(
+        payment_text,
+        reply_markup=keyboard.as_markup(),
+        parse_mode="Markdown"
+    )
+
+    await callback.answer("💳 Ссылка на оплату создана!")
 
 
 @router.callback_query(F.data == "my_premium_requests")
@@ -498,9 +549,12 @@ async def premium_ai_info(callback: CallbackQuery, state: FSMContext):
 
 
 # Пожертвования
-@router.callback_query(F.data == "settings_donation")
+@router.callback_query(F.data.in_(["settings_donation", "donate_menu"]))
 async def settings_donation(callback: CallbackQuery, state: FSMContext):
     """Показывает меню пожертвований"""
+    # Очищаем состояние на случай если пользователь был в процессе ввода суммы
+    await state.clear()
+
     keyboard = create_donation_keyboard()
 
     donation_text = (
@@ -526,24 +580,89 @@ async def settings_donation(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("donate_") & ~F.data.in_(["donate_stars_menu"]))
+@router.callback_query(F.data.startswith("donate_") & ~F.data.in_(["donate_stars_menu", "donate_menu"]))
 async def process_donation(callback: CallbackQuery, state: FSMContext):
     """Обработка рублевых пожертвований (исключая Stars)"""
+    logger.info(f"🔍 Получен callback пожертвования: {callback.data}")
+
+    from services.payment_service import payment_service
+
     amount = callback.data.split("_")[1]
+    user_id = callback.from_user.id
+
+    logger.info(f"🔍 Обработка суммы: {amount} для пользователя {user_id}")
 
     if amount == "custom":
-        # TODO: Запросить ввод суммы
+        # Ввод произвольной суммы отключен для стабильности
         await callback.answer(
-            "💰 Ввод произвольной суммы временно недоступен. Выберите готовую сумму.",
+            "💰 Ввод произвольной суммы временно недоступен.\nВыберите готовую сумму из предложенных.",
             show_alert=True
         )
         return
 
-    # TODO: Интеграция с ЮKassa
-    await callback.answer(
-        f"💳 Пожертвование {amount}₽ временно недоступно. Функция в разработке.",
-        show_alert=True
+    # Проверяем, настроена ли ЮKassa
+    if not payment_service.is_enabled():
+        await callback.answer(
+            "💳 Пожертвования временно недоступны. ЮKassa не настроена.\n"
+            "Обратитесь к администратору.",
+            show_alert=True
+        )
+        return
+
+    try:
+        amount_float = float(amount)
+    except ValueError:
+        await callback.answer("❌ Некорректная сумма", show_alert=True)
+        return
+
+    # Создаем платеж для пожертвования
+    payment_data = await payment_service.create_donation_payment(
+        user_id=user_id,
+        amount=amount_float
     )
+
+    if not payment_data:
+        await callback.answer(
+            "❌ Ошибка создания платежа. Попробуйте позже.",
+            show_alert=True
+        )
+        return
+
+    # Отправляем ссылку на оплату
+    donation_text = (
+        f"💝 **Пожертвование на развитие бота**\n\n"
+        f"💰 **Сумма:** {amount_float}₽\n\n"
+        f"🎯 **На что идут средства:**\n"
+        f"• Оплата серверов и хостинга\n"
+        f"• Доступ к API библейских текстов\n"
+        f"• Улучшение ИИ помощника\n"
+        f"• Добавление новых функций\n\n"
+        f"🔒 **Безопасность:**\n"
+        f"• Оплата через ЮKassa\n"
+        f"• Защищенное соединение\n"
+        f"• Поддержка всех карт\n\n"
+        f"🙏 **Спасибо за поддержку!**"
+    )
+
+    # Создаем клавиатуру с кнопкой оплаты
+    keyboard = InlineKeyboardBuilder()
+    keyboard.add(InlineKeyboardButton(
+        text="💳 Пожертвовать",
+        url=payment_data["confirmation_url"]
+    ))
+    keyboard.add(InlineKeyboardButton(
+        text="◀️ Назад",
+        callback_data="donate_menu"
+    ))
+    keyboard.adjust(1)
+
+    await callback.message.edit_text(
+        donation_text,
+        reply_markup=keyboard.as_markup(),
+        parse_mode="Markdown"
+    )
+
+    await callback.answer("💝 Ссылка на пожертвование создана!")
 
 
 @router.callback_query(F.data == "donate_stars_menu")
@@ -1121,3 +1240,8 @@ async def back_to_main_menu(callback: CallbackQuery, state: FSMContext):
         reply_markup=await get_main_keyboard()
     )
     await callback.answer()
+
+
+# Дублирующий обработчик удален
+
+# Отладочный обработчик для всех сообщений (временно)

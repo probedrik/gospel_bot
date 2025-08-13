@@ -3,7 +3,7 @@
 """
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from config.settings import ADMIN_USER_ID
-from config.ai_settings import PREMIUM_AI_PACKAGE_PRICE, PREMIUM_AI_PACKAGE_REQUESTS
+from config.ai_settings import PREMIUM_AI_PACKAGE_PRICE, PREMIUM_AI_PACKAGE_REQUESTS, PREMIUM_REQUESTS_50, PREMIUM_PRICE_50
 from services.ai_settings_manager import ai_settings_manager
 
 
@@ -12,14 +12,20 @@ async def create_settings_keyboard(user_id: int = None) -> InlineKeyboardMarkup:
     buttons = [
         [
             InlineKeyboardButton(
-                text="🔄 Сменить перевод",
-                callback_data="settings_translation"
+                text="🧠 Премиум ИИ",
+                callback_data="premium_ai_info"
             )
         ],
         [
             InlineKeyboardButton(
                 text="🤖 Лимиты ИИ",
                 callback_data="settings_ai_limits"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="🔄 Сменить перевод",
+                callback_data="settings_translation"
             )
         ],
         [
@@ -113,12 +119,6 @@ def create_ai_limits_keyboard() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(
-                text="⭐ Премиум доступ к ИИ",
-                callback_data="ai_premium_access"
-            )
-        ],
-        [
-            InlineKeyboardButton(
                 text="⬅️ Назад к настройкам",
                 callback_data="back_to_settings"
             )
@@ -135,7 +135,7 @@ def create_premium_ai_keyboard() -> InlineKeyboardMarkup:
     buttons = [
         [
             InlineKeyboardButton(
-                text=f"⭐ Купить +{PREMIUM_AI_PACKAGE_REQUESTS} запросов ({PREMIUM_AI_PACKAGE_PRICE}₽)",
+                text=f"⭐ Купить +{PREMIUM_REQUESTS_50} запросов ({PREMIUM_PRICE_50}₽)",
                 callback_data="buy_premium_ai_50"
             )
         ],
@@ -159,8 +159,8 @@ def create_premium_ai_keyboard() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(
-                text="⬅️ Назад к лимитам ИИ",
-                callback_data="settings_ai_limits"
+                text="⬅️ Назад к настройкам",
+                callback_data="back_to_settings"
             )
         ]
     ]
@@ -193,8 +193,8 @@ def create_donation_keyboard() -> InlineKeyboardMarkup:
                 callback_data="donate_500"
             ),
             InlineKeyboardButton(
-                text="💰 Ввести сумму",
-                callback_data="donate_custom"
+                text="🪙 1000₽",
+                callback_data="donate_1000"
             )
         ],
         [

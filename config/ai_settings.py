@@ -75,6 +75,10 @@ YOOKASSA_WEBHOOK_SECRET = os.getenv("YOOKASSA_WEBHOOK_SECRET", "")
 PREMIUM_AI_PACKAGE_PRICE = 100  # 100₽ за 50 запросов
 PREMIUM_AI_PACKAGE_REQUESTS = 30
 
+# Константы для совместимости с handlers/settings.py
+PREMIUM_REQUESTS_50 = 30  # Количество премиум запросов в пакете
+PREMIUM_PRICE_50 = 100   # Цена за 50 запросов в рублях
+
 # Включить подробное логирование ответов OpenRouter API (для отладки)
 LOG_OPENROUTER_RESPONSE = False
 

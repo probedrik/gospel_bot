@@ -6,3 +6,4 @@ openpyxl>=3.0.9
 aiosqlite>=0.17.0 
 asyncpg>=0.29.0 
 supabase>=2.3.0
+yookassa>=3.0.0

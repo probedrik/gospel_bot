@@ -4,6 +4,7 @@ import com.bibleapp.data.models.User
 import com.bibleapp.data.preferences.UserPreferences
 import com.bibleapp.data.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.from
+import io.github.jan.supabase.postgrest.query.Columns
 import javax.inject.Inject
 import javax.inject.Singleton
 import java.time.LocalDateTime
@@ -26,8 +27,8 @@ class UserRepository @Inject constructor(
     suspend fun getUser(userId: Int): User? {
         return try {
             client.from("users")
-                .select()
-                .eq("user_id", userId)
+                .select(columns = Columns.list("*"))
+                .eq(column = "user_id", value = userId)
                 .decodeSingleOrNull<User>()
         } catch (e: Exception) {
             null
@@ -63,7 +64,7 @@ class UserRepository @Inject constructor(
         return try {
             client.from("users")
                 .update(mapOf("translation" to translation))
-                .eq("user_id", userId)
+                .eq(column = "user_id", value = userId)
             true
         } catch (e: Exception) {
             false
@@ -75,7 +76,7 @@ class UserRepository @Inject constructor(
             val now = LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
             client.from("users")
                 .update(mapOf("last_activity" to now))
-                .eq("user_id", userId)
+                .eq(column = "user_id", value = userId)
             true
         } catch (e: Exception) {
             false

@@ -149,7 +149,7 @@ async def main() -> None:
     from handlers import calendar as calendar_handler
     dp.include_router(calendar_handler.router)
 
-    # Настройки (включают обработчики платежей)
+    # Настройки (включают обработчики платежей) - регистрируем в конце
     from handlers import settings as settings_handler
     dp.include_router(settings_handler.router)
 

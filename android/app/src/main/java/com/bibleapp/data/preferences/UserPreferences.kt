@@ -23,11 +23,23 @@ class UserPreferences @Inject constructor(
         private val LAST_AI_USAGE_DATE = stringPreferencesKey("last_ai_usage_date")
         private val SELECTED_TRANSLATION = stringPreferencesKey("selected_translation")
         private val THEME_MODE = stringPreferencesKey("theme_mode")
+        private val LOCAL_BOOKMARKS_JSON = stringPreferencesKey("local_bookmarks_json")
     }
 
     suspend fun getUserId(): Int? {
         val userId = context.dataStore.data.first()[USER_ID]
         return if (userId == 0) null else userId
+    }
+
+    // --- Local bookmarks fallback storage ---
+    suspend fun getLocalBookmarksJson(): String {
+        return context.dataStore.data.first()[LOCAL_BOOKMARKS_JSON] ?: "[]"
+    }
+
+    suspend fun setLocalBookmarksJson(json: String) {
+        context.dataStore.edit { preferences ->
+            preferences[LOCAL_BOOKMARKS_JSON] = json
+        }
     }
 
     suspend fun setUserId(userId: Int) {

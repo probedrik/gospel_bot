@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -5,6 +7,7 @@ plugins {
     id("com.google.dagger.hilt.android")
     id("org.jetbrains.kotlin.plugin.parcelize")
     id("org.jetbrains.kotlin.plugin.serialization")
+    id("org.jetbrains.kotlin.plugin.compose")
 }
 
 android {
@@ -12,7 +15,7 @@ android {
     compileSdk = 34
 
     // Load secrets from local.properties
-    val localProps = java.util.Properties()
+    val localProps = Properties()
     val localPropsFile = rootProject.file("local.properties")
     if (localPropsFile.exists()) {
         localProps.load(localPropsFile.inputStream())
@@ -23,7 +26,7 @@ android {
 
     defaultConfig {
         applicationId = "com.bibleapp"
-        minSdk = 24
+        minSdk = 26
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
@@ -34,9 +37,9 @@ android {
         }
 
         // Expose secrets via BuildConfig (kept out of VCS via local.properties)
-        buildConfigField("String", "SUPABASE_URL", "\"$SUPABASE_URL\"")
-        buildConfigField("String", "SUPABASE_ANON_KEY", "\"$SUPABASE_ANON_KEY\"")
-        buildConfigField("String", "OPENROUTER_API_KEY", "\"$OPENROUTER_API_KEY\"")
+        buildConfigField("String", "SUPABASE_URL", "\"${SUPABASE_URL.replace("\"", "\\\"")}\"")
+        buildConfigField("String", "SUPABASE_ANON_KEY", "\"${SUPABASE_ANON_KEY.replace("\"", "\\\"")}\"")
+        buildConfigField("String", "OPENROUTER_API_KEY", "\"${OPENROUTER_API_KEY.replace("\"", "\\\"")}\"")
     }
 
     buildTypes {
@@ -60,7 +63,8 @@ android {
         buildConfig = true
     }
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.4"
+        // Managed by Kotlin Compose plugin. No manual version.
+        kotlinCompilerExtensionVersion = null
     }
     packaging {
         resources {
@@ -73,11 +77,14 @@ dependencies {
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     implementation("androidx.activity:activity-compose:1.8.2")
-    implementation(platform("androidx.compose:compose-bom:2023.10.01"))
+    implementation(platform("androidx.compose:compose-bom:2024.10.01"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-extended")
+    // XML Material themes (Theme.Material3.*)
+    implementation("com.google.android.material:material:1.12.0")
     
     // Navigation
     implementation("androidx.navigation:navigation-compose:2.7.5")
@@ -85,16 +92,20 @@ dependencies {
     // ViewModel
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
     
-    // Supabase
-    implementation("io.github.jan-tennert.supabase:postgrest-kt:2.0.4")
-    implementation("io.github.jan-tennert.supabase:realtime-kt:2.0.4")
-    implementation("io.github.jan-tennert.supabase:auth-kt:2.0.4")
-    implementation("io.ktor:ktor-client-android:2.3.7")
+    // Supabase 3.x via BOM (требует Ktor 3)
+    implementation(platform("io.github.jan-tennert.supabase:bom:3.0.0"))
+    implementation("io.github.jan-tennert.supabase:postgrest-kt")
+    implementation("io.github.jan-tennert.supabase:realtime-kt")
+    implementation("io.github.jan-tennert.supabase:auth-kt")
+
+    // Ktor 3 engine for Android and websockets
+    implementation("io.ktor:ktor-client-android:3.0.0")
+    implementation("io.ktor:ktor-client-websockets:3.0.0")
     
     // Hilt
-    implementation("com.google.dagger:hilt-android:2.48")
-    implementation("androidx.hilt:hilt-navigation-compose:1.1.0")
-    kapt("com.google.dagger:hilt-compiler:2.48")
+    implementation("com.google.dagger:hilt-android:2.51.1")
+    implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
+    kapt("com.google.dagger:hilt-compiler:2.51.1")
     
     // Retrofit (для OpenRouter API)
     implementation("com.squareup.retrofit2:retrofit:2.9.0")
@@ -108,7 +119,7 @@ dependencies {
     implementation("androidx.datastore:datastore-preferences:1.0.0")
     
     // Serialization
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
     
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
