@@ -133,7 +133,7 @@ class PaymentService:
                 },
                 "confirmation": {
                     "type": "redirect",
-                    "return_url": return_url or "https://t.me/your_bot"
+                    "return_url": return_url or "https://t.me/bible_plus_ai"
                 },
                 "capture": True,
                 "description": f"Пожертвование на развитие бота",
@@ -205,7 +205,8 @@ class PaymentService:
                 logger.error("❌ Не найден user_id в метаданных платежа")
                 return False
 
-            from services.premium_manager import premium_manager
+            from services.premium_manager import PremiumManager
+            premium_manager = PremiumManager()
 
             if payment_type == "premium_requests":
                 # Обработка покупки премиум запросов

@@ -145,18 +145,8 @@ def create_premium_ai_keyboard() -> InlineKeyboardMarkup:
                 callback_data="buy_premium_stars"
             )
         ],
-        [
-            InlineKeyboardButton(
-                text="📊 Мои премиум запросы",
-                callback_data="my_premium_requests"
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="ℹ️ Как работает премиум",
-                callback_data="premium_ai_info"
-            )
-        ],
+
+
         [
             InlineKeyboardButton(
                 text="⬅️ Назад к настройкам",

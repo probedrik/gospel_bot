@@ -96,7 +96,7 @@ RESPONSE_LENGTH_FULL = "full"    # Полный
 STAR_PREMIUM_PACKAGES = {
     "10": {
         "requests": 10,
-        "cost_stars": 1,
+        "cost_stars": 25,
         "description": "Базовый пакет"
     },
     "25": {

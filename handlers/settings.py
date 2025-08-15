@@ -512,7 +512,19 @@ async def my_premium_requests(callback: CallbackQuery, state: FSMContext):
     # Форматируем дату первой покупки
     first_purchase = ""
     if stats['created_at']:
-        first_purchase = f"\n📅 **Первая покупка:** {stats['created_at'].strftime('%d.%m.%Y')}"
+        try:
+            # Если created_at - строка, парсим её
+            if isinstance(stats['created_at'], str):
+                from datetime import datetime
+                # Парсим ISO формат даты из Supabase
+                created_date = datetime.fromisoformat(stats['created_at'].replace('Z', '+00:00'))
+                first_purchase = f"\n📅 **Первая покупка:** {created_date.strftime('%d.%m.%Y')}"
+            else:
+                # Если это уже datetime объект
+                first_purchase = f"\n📅 **Первая покупка:** {stats['created_at'].strftime('%d.%m.%Y')}"
+        except Exception as e:
+            logger.error(f"Ошибка форматирования даты: {e}")
+            first_purchase = f"\n📅 **Первая покупка:** {stats['created_at']}"
 
     text = (
         f"📊 **Ваши премиум запросы**\n\n"
@@ -537,8 +549,58 @@ async def my_premium_requests(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "premium_ai_info")
 async def premium_ai_info(callback: CallbackQuery, state: FSMContext):
-    """Подробная информация о премиум доступе"""
-    info_text = await get_premium_detailed_info_text()
+    """Подробная информация о премиум доступе с балансом пользователя"""
+    user_id = callback.from_user.id
+    
+    # Получаем статистику премиум запросов
+    from services.premium_manager import PremiumManager
+    premium_manager = PremiumManager()
+    stats = await premium_manager.get_user_premium_stats(user_id)
+    
+    # Форматируем дату первой покупки
+    first_purchase = ""
+    if stats['created_at']:
+        try:
+            # Если created_at - строка, парсим её
+            if isinstance(stats['created_at'], str):
+                from datetime import datetime
+                # Парсим ISO формат даты из Supabase
+                created_date = datetime.fromisoformat(stats['created_at'].replace('Z', '+00:00'))
+                first_purchase = f"\n📅 **Первая покупка:** {created_date.strftime('%d.%m.%Y')}"
+            else:
+                # Если это уже datetime объект
+                first_purchase = f"\n📅 **Первая покупка:** {stats['created_at'].strftime('%d.%m.%Y')}"
+        except Exception as e:
+            logger.error(f"Ошибка форматирования даты: {e}")
+            first_purchase = f"\n📅 **Первая покупка:** {stats['created_at']}"
+    
+    # Создаем текст с информацией о балансе
+    balance_text = (
+        f"📊 **Ваши премиум запросы**\n\n"
+        f"⭐ **Доступно:** {stats['available']} запросов\n"
+        f"📈 **Всего куплено:** {stats['total_purchased']}\n"
+        f"📉 **Всего использовано:** {stats['total_used']}{first_purchase}\n\n"
+    )
+    
+    # Получаем базовую информацию о премиум доступе (без преимуществ и цен)
+    from services.ai_settings_manager import ai_settings_manager
+    daily_limit = await ai_settings_manager.get_daily_limit()
+    
+    info_text = (
+        balance_text +
+        "🧠 **Два уровня ИИ помощника:**\n"
+        "• **Обычный ИИ:** Краткие ответы (до 2000 символов), базовая модель\n"
+        "• **Премиум ИИ:** Подробный анализ (до 4000 символов), продвинутая модель\n\n"
+        "🎯 **Принцип работы:**\n"
+        f"• **Премиум пользователи всегда используют премиум ИИ!**\n"
+        f"• Сначала тратятся дневные лимиты ({daily_limit} запросов с премиум ИИ)\n"
+        "• Затем используются купленные премиум запросы\n"
+        "• Премиум запросы никогда не сгорают\n\n"
+        "ℹ️ **Как работает:**\n"
+        "• Не сгорают со временем\n"
+        "• Используются после дневных лимитов\n"
+        "• Накапливаются при покупке"
+    )
 
     keyboard = create_premium_ai_keyboard()
     await callback.message.edit_text(
