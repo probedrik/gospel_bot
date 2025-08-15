@@ -505,7 +505,8 @@ async def my_premium_requests(callback: CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
 
     # Получаем статистику премиум запросов
-    from services.premium_manager import premium_manager
+    from services.premium_manager import PremiumManager
+    premium_manager = PremiumManager()
     stats = await premium_manager.get_user_premium_stats(user_id)
 
     # Форматируем дату первой покупки

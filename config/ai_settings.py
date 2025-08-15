@@ -5,7 +5,7 @@ ENABLE_GPT_EXPLAIN = True  # Включить/отключить кнопку и
 
 # === ОБЫЧНЫЙ ИИ (бесплатные лимиты) ===
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
-OPENROUTER_MODEL = "mistralai/mistral-small-3.1-24b-instruct:free"
+OPENROUTER_MODEL = "google/gemini-2.5-flash-lite"
 
 # Роль для обычного ИИ
 LLM_ROLE = (

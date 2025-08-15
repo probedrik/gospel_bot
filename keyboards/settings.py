@@ -375,38 +375,28 @@ def create_stars_donation_keyboard() -> InlineKeyboardMarkup:
     buttons = [
         [
             InlineKeyboardButton(
+                text="⭐ 1 Star",
+                callback_data="donate_stars_1"
+            ),
+            InlineKeyboardButton(
                 text="⭐ 10 Stars",
                 callback_data="donate_stars_10"
-            ),
+            )
+        ],
+        [
             InlineKeyboardButton(
                 text="⭐ 25 Stars",
                 callback_data="donate_stars_25"
-            )
-        ],
-        [
+            ),
             InlineKeyboardButton(
                 text="⭐ 50 Stars",
                 callback_data="donate_stars_50"
-            ),
+            )
+        ],
+        [
             InlineKeyboardButton(
                 text="⭐ 100 Stars",
                 callback_data="donate_stars_100"
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="⭐ 250 Stars",
-                callback_data="donate_stars_250"
-            ),
-            InlineKeyboardButton(
-                text="⭐ 500 Stars",
-                callback_data="donate_stars_500"
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="💰 Ввести количество",
-                callback_data="donate_stars_custom"
             )
         ],
         [
