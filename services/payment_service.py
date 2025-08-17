@@ -73,10 +73,28 @@ class PaymentService:
                 },
                 "confirmation": {
                     "type": "redirect",
-                    "return_url": return_url or "https://t.me/your_bot"
+                    "return_url": return_url or "https://t.me/bedrik12345_bot"
                 },
                 "capture": True,
                 "description": f"Покупка {requests_count} премиум ИИ запросов",
+                "receipt": {
+                    "customer": {
+                        "email": f"user{user_id}@gospel-bot.local"
+                    },
+                    "items": [
+                        {
+                            "description": f"Премиум ИИ запросы ({requests_count} шт.)",
+                            "quantity": "1.00",
+                            "amount": {
+                                "value": f"{amount:.2f}",
+                                "currency": "RUB"
+                            },
+                            "vat_code": 1,  # НДС не облагается
+                            "payment_mode": "full_payment",
+                            "payment_subject": "service"
+                        }
+                    ]
+                },
                 "metadata": {
                     "user_id": str(user_id),
                     "type": "premium_requests",
@@ -129,14 +147,32 @@ class PaymentService:
             payment = self.Payment.create({
                 "amount": {
                     "value": f"{amount:.2f}",
-                "currency": "RUB"
+                    "currency": "RUB"
                 },
                 "confirmation": {
                     "type": "redirect",
-                    "return_url": return_url or "https://t.me/bible_plus_ai"
+                    "return_url": return_url or "https://t.me/bedrik12345_bot"
                 },
                 "capture": True,
                 "description": f"Пожертвование на развитие бота",
+                "receipt": {
+                    "customer": {
+                        "email": f"user{user_id}@gospel-bot.local"
+                    },
+                    "items": [
+                        {
+                            "description": "Пожертвование на развитие бота",
+                            "quantity": "1.00",
+                            "amount": {
+                                "value": f"{amount:.2f}",
+                                "currency": "RUB"
+                            },
+                            "vat_code": 1,  # НДС не облагается
+                            "payment_mode": "full_payment",
+                            "payment_subject": "service"
+                        }
+                    ]
+                },
                 "metadata": {
                     "user_id": str(user_id),
                     "type": "donation",

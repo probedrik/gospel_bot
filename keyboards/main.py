@@ -40,6 +40,7 @@ async def get_main_keyboard() -> ReplyKeyboardMarkup:
 
     buttons.append([
         KeyboardButton(text="⚙️ Настройки"),
+        KeyboardButton(text="💝 Помочь проекту"),
     ])
 
     # Добавляем кнопку поиска по слову только если функция включена

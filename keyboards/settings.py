@@ -40,7 +40,7 @@ async def create_settings_keyboard(user_id: int = None) -> InlineKeyboardMarkup:
 
     buttons.append([
         InlineKeyboardButton(
-            text="🪙 Помочь проекту",
+            text="💝 Помочь проекту",
             callback_data="settings_donation"
         )
     ])
@@ -163,34 +163,14 @@ def create_donation_keyboard() -> InlineKeyboardMarkup:
     buttons = [
         [
             InlineKeyboardButton(
-                text="⭐ Telegram Stars",
+                text="🌟 Telegram Stars",
                 callback_data="donate_stars_menu"
             )
         ],
         [
             InlineKeyboardButton(
-                text="🪙 50₽",
-                callback_data="donate_50"
-            ),
-            InlineKeyboardButton(
-                text="🪙 100₽",
-                callback_data="donate_100"
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="🪙 500₽",
-                callback_data="donate_500"
-            ),
-            InlineKeyboardButton(
-                text="🪙 1000₽",
-                callback_data="donate_1000"
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="ℹ️ О пожертвованиях",
-                callback_data="donation_info"
+                text="💰 YooMoney (карты)",
+                url="https://yoomoney.ru/to/4100119287537792"
             )
         ],
         [
