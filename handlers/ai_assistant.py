@@ -3,13 +3,14 @@
 """
 import logging
 import re
+import html
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
 
-from handlers.text_messages import ai_check_and_increment_db
+from handlers.text_messages import ai_check_and_increment_db, format_ai_or_commentary
 from utils.api_client import bible_api, ask_gpt_bible_verses
 from utils.bible_data import bible_data
 from utils.text_utils import split_text, get_verses_parse_mode
@@ -83,7 +84,7 @@ async def process_problem_description(message: Message, state: FSMContext):
     try:
         from services.ai_quota_manager import ai_quota_manager
         can_use_ai = await ai_quota_manager.check_and_increment_usage(user_id)
-        
+
         if not can_use_ai:
             quota_info = await ai_quota_manager.get_user_quota_info(user_id)
             await message.answer(
@@ -144,33 +145,39 @@ async def process_problem_description(message: Message, state: FSMContext):
 
         keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
 
+        # Приводим ответ к тому же стилю, что и разбор главы: цитата + обычный текст
+        import re as _re
+        cleaned_ai_text = _re.sub(r'<[^>]*>', '', verses_response).strip()
+        formatted_text, opts = format_ai_or_commentary(
+            cleaned_ai_text,
+            title="🤖 Рекомендации ИИ"
+        )
+
+        # Разбиваем на части, чтобы избежать обрезки Telegram (4096 символов)
+        text_parts = list(split_text(formatted_text))
+
+        # Отправляем частями: последняя часть — с кнопками
+        for idx, part in enumerate(text_parts):
+            is_last = idx == len(text_parts) - 1
+            if idx == 0:
+                await loading_msg.edit_text(
+                    part,
+                    parse_mode=opts.get("parse_mode", "HTML"),
+                    reply_markup=keyboard if is_last else None
+                )
+            else:
+                await message.answer(
+                    part,
+                    parse_mode=opts.get("parse_mode", "HTML"),
+                    reply_markup=keyboard if is_last else None
+                )
+
         # Сохраняем данные для возможности возврата
         await state.set_state(AIAssistantStates.showing_verses)
         await state.update_data(
             problem_text=problem_text,
             verse_references=verse_references,
-            verses_message_text=f"🤖 <b>ИИ рекомендует следующие библейские отрывки:</b>\n\n"
-                               f"<i>Для проблемы: {problem_text}</i>\n\n"
-                               f"Выберите отрывок для чтения:"
-        )
-
-        message_text = (
-            f"🤖 <b>ИИ рекомендует следующие библейские отрывки:</b>\n\n"
-            f"<i>Для проблемы: {problem_text}</i>\n\n"
-            f"Выберите отрывок для чтения:"
-        )
-        
-        # Сохраняем данные в состоянии для возможности возврата
-        await state.update_data(
-            problem_text=problem_text,
-            verse_references=verse_references,
-            verses_message_text=message_text
-        )
-        
-        await loading_msg.edit_text(
-            message_text,
-            reply_markup=keyboard,
-            parse_mode="HTML"
+            verses_message_text=formatted_text
         )
 
     except Exception as e:
@@ -222,7 +229,8 @@ async def create_ai_verse_buttons(verse_ref: str, user_id: int, from_ai_assistan
 
     # Парсим ссылку на стих
     import re
-    match = re.match(r"([А-Яа-яёЁ0-9\s]+)\s(\d+)(?::(\d+)(?:-(\d+))?)?", verse_ref)
+    match = re.match(
+        r"([А-Яа-яёЁ0-9\s]+)\s(\d+)(?::(\d+)(?:-(\d+))?)?", verse_ref)
     if not match:
         return buttons
 
@@ -239,7 +247,7 @@ async def create_ai_verse_buttons(verse_ref: str, user_id: int, from_ai_assistan
 
     # Создаем ряд кнопок для максимального использования ширины
     action_row = []
-    
+
     # Кнопка "Разбор ИИ"
     from config.ai_settings import ENABLE_GPT_EXPLAIN
     if ENABLE_GPT_EXPLAIN:
@@ -287,7 +295,7 @@ async def create_ai_verse_buttons(verse_ref: str, user_id: int, from_ai_assistan
                 verse_callback = f"{verse_start}-{verse_end}"
             else:
                 verse_callback = verse_start if verse_start else "0"
-            
+
             # Добавляем кнопку "Разбор ИИ" в ряд
             action_row.append(
                 InlineKeyboardButton(
@@ -295,7 +303,7 @@ async def create_ai_verse_buttons(verse_ref: str, user_id: int, from_ai_assistan
                     callback_data=f"gpt_explain_{en_book}_{chapter}_{verse_callback}"
                 )
             )
-    
+
     # Кнопка "Открыть всю главу" в том же ряду
     action_row.append(
         InlineKeyboardButton(
@@ -303,7 +311,7 @@ async def create_ai_verse_buttons(verse_ref: str, user_id: int, from_ai_assistan
             callback_data=f"open_chapter_{book_abbr}_{chapter}"
         )
     )
-    
+
     # Добавляем ряд кнопок действий
     if action_row:
         buttons.append(action_row)
@@ -311,15 +319,16 @@ async def create_ai_verse_buttons(verse_ref: str, user_id: int, from_ai_assistan
     # Кнопка закладки для стиха/диапазона стихов
     from utils.bookmark_utils import create_bookmark_button
     from handlers.bookmark_handlers import check_if_bookmarked
-    
+
     verse_start_num = int(verse_start) if verse_start else None
-    verse_end_num = int(verse_end) if verse_end and verse_end != verse_start else None
-    
+    verse_end_num = int(
+        verse_end) if verse_end and verse_end != verse_start else None
+
     # Проверяем, добавлен ли стих в закладки
     is_bookmarked = await check_if_bookmarked(
         user_id, book_id, chapter, None, verse_start_num, verse_end_num
     )
-    
+
     bookmark_button = create_bookmark_button(
         book_id=book_id,
         chapter_start=chapter,
@@ -327,7 +336,7 @@ async def create_ai_verse_buttons(verse_ref: str, user_id: int, from_ai_assistan
         verse_end=verse_end_num,
         is_bookmarked=is_bookmarked
     )
-    
+
     buttons.append([bookmark_button])
 
     # Кнопка возврата (зависит от того, откуда пришел пользователь)
@@ -358,11 +367,11 @@ async def back_to_ai_verses(callback: CallbackQuery, state: FSMContext):
         problem_text = data.get('problem_text')
         verse_references = data.get('verse_references')
         verses_message_text = data.get('verses_message_text')
-        
+
         if not verse_references:
             await callback.answer("❌ Данные отрывков не найдены")
             return
-        
+
         # Создаем кнопки со ссылками на стихи заново
         buttons = []
         for verse_ref in verse_references[:5]:  # Ограничиваем до 5 стихов
@@ -372,7 +381,7 @@ async def back_to_ai_verses(callback: CallbackQuery, state: FSMContext):
                     callback_data=f"ai_verse_{verse_ref}"
                 )
             ])
-        
+
         # Добавляем кнопку возврата в меню
         buttons.append([
             InlineKeyboardButton(
@@ -380,41 +389,54 @@ async def back_to_ai_verses(callback: CallbackQuery, state: FSMContext):
                 callback_data="back_to_menu"
             )
         ])
-        
+
         keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-        
+
         await callback.message.edit_text(
             verses_message_text,
             reply_markup=keyboard,
             parse_mode="HTML"
         )
-        
+
         await callback.answer()
-        
+
     except Exception as e:
         logger.error(f"Ошибка при возврате к отрывкам: {e}", exc_info=True)
         await callback.answer("❌ Произошла ошибка")
 
+
 def parse_ai_response(response: str) -> list:
-    """Парсит ответ ИИ и извлекает ссылки на библейские стихи"""
+    """Извлекает ссылки на библейские стихи из произвольного текста ответа ИИ.
+
+    Поддерживает форматы с диапазонами и одиночными стихами. Ищет по всему тексту,
+    а не только по разделителям ';', чтобы работать с новыми промптами с описаниями.
+    """
     if not response or response.startswith("Извините"):
         return []
 
-    # Разделяем по точке с запятой
-    verse_refs = [ref.strip() for ref in response.split(';') if ref.strip()]
+    text = response
 
-    # Фильтруем и валидируем ссылки
+    # Регулярка: Название/сокращение книги (рус), пробел, глава:стих[-стих]
+    # Примеры: "Мф 6:25-34", "Пс 22:1-6", "Иак 1:5", "Рим 8:28"
+    pattern = r"([А-Яа-яёЁ0-9]{1,4}[А-Яа-яёЁ0-9\s]{0,20})\s(\d+):(\d+)(?:-(\d+))?"
+    matches = re.findall(pattern, text)
+
+    candidates = []
+    for book, chapter, verse_start, verse_end in matches:
+        book_clean = re.sub(r"\s+", " ", book).strip()
+        if verse_end:
+            ref = f"{book_clean} {chapter}:{verse_start}-{verse_end}"
+        else:
+            ref = f"{book_clean} {chapter}:{verse_start}"
+        candidates.append(ref)
+
+    # Удаляем дубли, сохраняем порядок
+    seen = set()
     valid_refs = []
-    for ref in verse_refs:
-        # Проверяем формат ссылки с диапазоном стихов
-        if re.match(r'^[А-Яа-яёЁ0-9\s]+\s\d+:\d+(-\d+)?$', ref.strip()):
-            valid_refs.append(ref.strip())
-        # Проверяем формат ссылки с одним стихом
-        elif re.match(r'^[А-Яа-яёЁ0-9\s]+\s\d+:\d+$', ref.strip()):
-            valid_refs.append(ref.strip())
-        # Если указана только глава без стиха, добавляем :1
-        elif re.match(r'^[А-Яа-яёЁ0-9\s]+\s\d+$', ref.strip()):
-            valid_refs.append(ref.strip() + ":1")
+    for ref in candidates:
+        if ref not in seen:
+            seen.add(ref)
+            valid_refs.append(ref)
 
     logger.info(
         f"Извлечено {len(valid_refs)} валидных ссылок из ответа ИИ: {valid_refs}")

@@ -500,6 +500,42 @@ class UniversalDatabaseManager:
         """Удаляет библейскую тему"""
         return await self.manager.delete_bible_topic(topic_id)
 
+    # === Диалоговый ассистент: врапперы для Supabase ===
+    async def create_conversation(self, user_id: int, title: str = None):
+        if hasattr(self.manager, 'create_conversation'):
+            return await self.manager.create_conversation(user_id, title)
+        return None
+
+    async def update_conversation_title(self, conversation_id: str, user_id: int, title: str) -> bool:
+        if hasattr(self.manager, 'update_conversation_title'):
+            return await self.manager.update_conversation_title(conversation_id, user_id, title)
+        return False
+
+    async def get_conversation(self, conversation_id: str, user_id: int):
+        if hasattr(self.manager, 'get_conversation'):
+            return await self.manager.get_conversation(conversation_id, user_id)
+        return None
+
+    async def list_conversations(self, user_id: int, limit: int = 20):
+        if hasattr(self.manager, 'list_conversations'):
+            return await self.manager.list_conversations(user_id, limit)
+        return []
+
+    async def delete_conversation(self, conversation_id: str, user_id: int) -> bool:
+        if hasattr(self.manager, 'delete_conversation'):
+            return await self.manager.delete_conversation(conversation_id, user_id)
+        return False
+
+    async def add_message(self, conversation_id: str, role: str, content: str, meta=None):
+        if hasattr(self.manager, 'add_message'):
+            return await self.manager.add_message(conversation_id, role, content, meta)
+        return None
+
+    async def list_messages(self, conversation_id: str, limit: int = 20):
+        if hasattr(self.manager, 'list_messages'):
+            return await self.manager.list_messages(conversation_id, limit)
+        return []
+
     # === МЕТОДЫ ДЛЯ РАБОТЫ С НАСТРОЙКАМИ ИИ ===
 
     async def get_ai_setting(self, setting_key: str):

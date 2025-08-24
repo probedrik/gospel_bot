@@ -861,6 +861,95 @@ class SupabaseManager:
             logger.error(f"Ошибка установки настройки {setting_key}: {e}")
             return False
 
+    # === МЕТОДЫ ДЛЯ ДИАЛОГОВОГО АССИСТЕНТА ===
+
+    async def create_conversation(self, user_id: int, title: str = None) -> Optional[str]:
+        """Создает новый разговор и возвращает его id"""
+        try:
+            data = {
+                'user_id': user_id,
+                'title': title or 'Новая беседа'
+            }
+            result = self.client.table(
+                'ai_conversations').insert(data).execute()
+            if result.data:
+                return result.data[0]['id']
+            return None
+        except Exception as e:
+            logger.error(f"Ошибка создания разговора: {e}")
+            return None
+
+    async def update_conversation_title(self, conversation_id: str, user_id: int, title: str) -> bool:
+        """Обновляет заголовок разговора"""
+        try:
+            result = self.client.table('ai_conversations').update({
+                'title': title,
+                'updated_at': datetime.now().isoformat()
+            }).eq('id', conversation_id).eq('user_id', user_id).execute()
+            return bool(result.data)
+        except Exception as e:
+            logger.error(f"Ошибка обновления заголовка разговора: {e}")
+            return False
+
+    async def get_conversation(self, conversation_id: str, user_id: int) -> Optional[Dict[str, Any]]:
+        """Возвращает разговор пользователя"""
+        try:
+            result = self.client.table('ai_conversations').select(
+                '*').eq('id', conversation_id).eq('user_id', user_id).execute()
+            return result.data[0] if result.data else None
+        except Exception as e:
+            logger.error(f"Ошибка получения разговора: {e}")
+            return None
+
+    async def list_conversations(self, user_id: int, limit: int = 20) -> List[Dict[str, Any]]:
+        """Список разговоров пользователя, по убыванию обновления"""
+        try:
+            result = self.client.table('ai_conversations').select(
+                '*').eq('user_id', user_id).order('updated_at', desc=True).limit(limit).execute()
+            return result.data or []
+        except Exception as e:
+            logger.error(f"Ошибка получения списка разговоров: {e}")
+            return []
+
+    async def delete_conversation(self, conversation_id: str, user_id: int) -> bool:
+        """Удаляет разговор пользователя"""
+        try:
+            result = self.client.table('ai_conversations').delete().eq(
+                'id', conversation_id).eq('user_id', user_id).execute()
+            return bool(result.data)
+        except Exception as e:
+            logger.error(f"Ошибка удаления разговора: {e}")
+            return False
+
+    async def add_message(self, conversation_id: str, role: str, content: str, meta: Dict[str, Any] = None) -> Optional[str]:
+        """Добавляет сообщение в разговор и возвращает его id"""
+        try:
+            data = {
+                'conversation_id': conversation_id,
+                'role': role,
+                'content': content,
+                'meta': meta or {}
+            }
+            result = self.client.table('ai_messages').insert(data).execute()
+            if result.data:
+                return result.data[0]['id']
+            return None
+        except Exception as e:
+            logger.error(f"Ошибка добавления сообщения в разговор: {e}")
+            return None
+
+    async def list_messages(self, conversation_id: str, limit: int = 20) -> List[Dict[str, Any]]:
+        """Возвращает последние сообщения разговора по возрастанию времени"""
+        try:
+            result = self.client.table('ai_messages').select(
+                '*').eq('conversation_id', conversation_id).order('created_at', desc=True).limit(limit).execute()
+            rows = result.data or []
+            # Возвращаем по возрастанию
+            return list(reversed(rows))
+        except Exception as e:
+            logger.error(f"Ошибка получения сообщений разговора: {e}")
+            return []
+
     async def get_all_ai_settings(self) -> List[Dict[str, Any]]:
         """Получает все настройки ИИ"""
         try:

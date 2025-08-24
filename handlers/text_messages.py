@@ -14,6 +14,7 @@ from config.settings import ENABLE_DELETE_RELATED_MESSAGES_DEFAULT
 
 from keyboards.main import (
     get_main_keyboard,
+    get_read_bible_keyboard,
     create_book_keyboard,
     create_navigation_keyboard,
 )
@@ -85,6 +86,15 @@ async def ai_check_and_increment_db(user_id: int) -> bool:
     return True
 
 
+@router.message(F.text == "📖 Читать Библию")
+async def open_read_bible_menu(message: Message, state: FSMContext):
+    """Подменю чтения Библии"""
+    await message.answer(
+        "Выберите раздел:",
+        reply_markup=await get_read_bible_keyboard()
+    )
+
+
 @router.message(F.text == "📖 Выбрать книгу")
 async def select_book(message: Message, state: FSMContext):
     """Обработчик выбора книги"""
@@ -94,6 +104,11 @@ async def select_book(message: Message, state: FSMContext):
         "Выберите книгу:",
         reply_markup=create_book_keyboard(page)
     )
+
+
+@router.message(F.text == "⬅️ Назад в главное меню")
+async def back_to_main_menu(message: Message, state: FSMContext):
+    await message.answer("Главное меню:", reply_markup=await get_main_keyboard())
 
 
 @router.message(F.text == "📊 Случайный стих")

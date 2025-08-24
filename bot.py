@@ -144,6 +144,9 @@ async def main() -> None:
     dp.include_router(bookmark_callbacks.router)
     dp.include_router(reading_plans.router)
     dp.include_router(ai_assistant.router)  # ИИ помощник
+    # Диалоговый ассистент
+    from handlers import ai_conversation as ai_chat_handler
+    dp.include_router(ai_chat_handler.router)
 
     # Календарь
     from handlers import calendar as calendar_handler
@@ -152,7 +155,7 @@ async def main() -> None:
     # Платежи через Telegram Stars
     from handlers import payments
     dp.include_router(payments.router)
-    
+
     # Настройки (включают обработчики платежей) - регистрируем в конце
     from handlers import settings as settings_handler
     dp.include_router(settings_handler.router)

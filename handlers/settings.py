@@ -26,6 +26,9 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 
+# Кнопка открытия диалога перенесена в главное меню (reply‑клавиатура)
+
+
 # Класс состояний и обработчик произвольной суммы отключены для стабильности
 # class DonationStates(StatesGroup):
 #     """Состояния для ввода суммы пожертвования"""
@@ -552,7 +555,8 @@ async def my_premium_requests(callback: CallbackQuery, state: FSMContext):
             if isinstance(stats['created_at'], str):
                 from datetime import datetime
                 # Парсим ISO формат даты из Supabase
-                created_date = datetime.fromisoformat(stats['created_at'].replace('Z', '+00:00'))
+                created_date = datetime.fromisoformat(
+                    stats['created_at'].replace('Z', '+00:00'))
                 first_purchase = f"\n📅 **Первая покупка:** {created_date.strftime('%d.%m.%Y')}"
             else:
                 # Если это уже datetime объект
@@ -586,12 +590,12 @@ async def my_premium_requests(callback: CallbackQuery, state: FSMContext):
 async def premium_ai_info(callback: CallbackQuery, state: FSMContext):
     """Подробная информация о премиум доступе с балансом пользователя"""
     user_id = callback.from_user.id
-    
+
     # Получаем статистику премиум запросов
     from services.premium_manager import PremiumManager
     premium_manager = PremiumManager()
     stats = await premium_manager.get_user_premium_stats(user_id)
-    
+
     # Форматируем дату первой покупки
     first_purchase = ""
     if stats['created_at']:
@@ -600,7 +604,8 @@ async def premium_ai_info(callback: CallbackQuery, state: FSMContext):
             if isinstance(stats['created_at'], str):
                 from datetime import datetime
                 # Парсим ISO формат даты из Supabase
-                created_date = datetime.fromisoformat(stats['created_at'].replace('Z', '+00:00'))
+                created_date = datetime.fromisoformat(
+                    stats['created_at'].replace('Z', '+00:00'))
                 first_purchase = f"\n📅 **Первая покупка:** {created_date.strftime('%d.%m.%Y')}"
             else:
                 # Если это уже datetime объект
@@ -608,7 +613,7 @@ async def premium_ai_info(callback: CallbackQuery, state: FSMContext):
         except Exception as e:
             logger.error(f"Ошибка форматирования даты: {e}")
             first_purchase = f"\n📅 **Первая покупка:** {stats['created_at']}"
-    
+
     # Создаем текст с информацией о балансе
     balance_text = (
         f"📊 **Ваши премиум запросы**\n\n"
@@ -616,11 +621,11 @@ async def premium_ai_info(callback: CallbackQuery, state: FSMContext):
         f"📈 **Всего куплено:** {stats['total_purchased']}\n"
         f"📉 **Всего использовано:** {stats['total_used']}{first_purchase}\n\n"
     )
-    
+
     # Получаем базовую информацию о премиум доступе (без преимуществ и цен)
     from services.ai_settings_manager import ai_settings_manager
     daily_limit = await ai_settings_manager.get_daily_limit()
-    
+
     info_text = (
         balance_text +
         "🧠 **Два уровня ИИ помощника:**\n"

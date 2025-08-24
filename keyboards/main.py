@@ -18,12 +18,11 @@ async def get_main_keyboard() -> ReplyKeyboardMarkup:
     """Создает и возвращает основную клавиатуру бота"""
     buttons = [
         [
-            KeyboardButton(text="📖 Выбрать книгу"),
-            KeyboardButton(text="📚 План чтения"),
+            KeyboardButton(text="📖 Читать Библию"),
+            KeyboardButton(text="🎯 Темы"),
         ],
         [
-            KeyboardButton(text="📝 Мои закладки"),
-            KeyboardButton(text="🎯 Темы"),
+            KeyboardButton(text="🤖 ИИ помощник"),
         ]
     ]
 
@@ -48,6 +47,27 @@ async def get_main_keyboard() -> ReplyKeyboardMarkup:
         buttons.append([
             KeyboardButton(text="🔍 Поиск по слову"),
         ])
+
+    return ReplyKeyboardMarkup(
+        keyboard=buttons,
+        resize_keyboard=True
+    )
+
+
+async def get_read_bible_keyboard() -> ReplyKeyboardMarkup:
+    """Подменю для чтения Библии: выбрать книгу, план, закладки"""
+    buttons = [
+        [
+            KeyboardButton(text="📖 Выбрать книгу"),
+            KeyboardButton(text="📚 План чтения"),
+        ],
+        [
+            KeyboardButton(text="📝 Мои закладки"),
+        ],
+        [
+            KeyboardButton(text="⬅️ Назад в главное меню"),
+        ]
+    ]
 
     return ReplyKeyboardMarkup(
         keyboard=buttons,
