@@ -414,16 +414,21 @@ def parse_ai_response(response: str) -> list:
     if not response or response.startswith("Извините"):
         return []
 
-    text = response
+    # Нормализация текста: заменяем типографские тире на обычный дефис
+    text = response.replace("\u2013", "-").replace("\u2014", "-")
+    # Упрощаем множественные пробелы
+    import re as _re
+    text = _re.sub(r"\s+", " ", text)
 
     # Регулярка: Название/сокращение книги (рус), пробел, глава:стих[-стих]
     # Примеры: "Мф 6:25-34", "Пс 22:1-6", "Иак 1:5", "Рим 8:28"
-    pattern = r"([А-Яа-яёЁ0-9]{1,4}[А-Яа-яёЁ0-9\s]{0,20})\s(\d+):(\d+)(?:-(\d+))?"
-    matches = re.findall(pattern, text)
+    # Допускаем точку в сокращениях (напр. "Ин.") и разные тире
+    pattern = r"([А-Яа-яЁё0-9][А-Яа-яЁё0-9\.\s]{0,30})\s(\d+):(\d+)(?:[-](\d+))?"
+    matches = _re.findall(pattern, text)
 
     candidates = []
     for book, chapter, verse_start, verse_end in matches:
-        book_clean = re.sub(r"\s+", " ", book).strip()
+        book_clean = _re.sub(r"\s+", " ", book).strip().rstrip('.')
         if verse_end:
             ref = f"{book_clean} {chapter}:{verse_start}-{verse_end}"
         else:

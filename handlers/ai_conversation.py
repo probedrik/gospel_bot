@@ -2,6 +2,7 @@
 Диалоговый ИИ‑ассистент с памятью (короткая в FSM + долговременная в Supabase).
 """
 import logging
+from datetime import datetime
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
@@ -11,6 +12,7 @@ from database.universal_manager import universal_db_manager as db
 from handlers.text_messages import format_ai_or_commentary
 from utils.text_utils import split_text
 from utils.api_client import ask_gpt_chat
+from services.ai_quota_manager import ai_quota_manager
 from handlers.ai_assistant import parse_ai_response
 
 logger = logging.getLogger(__name__)
@@ -62,9 +64,24 @@ async def start_chat(message: Message, state: FSMContext):
             await state.update_data(chat_conversation_id=conv_id)
 
     await state.set_state(ChatStates.in_conversation)
+
+    # Отмечаем время начала/продолжения текущего диалога
+    started_at = data.get('chat_started_at')
+    if not started_at:
+        started_at = datetime.now().strftime('%Y-%m-%d %H:%M')
+        await state.update_data(chat_started_at=started_at)
+
+    intro_text = (
+        "<b>🤖 Диалоговый ИИ‑помощник запущен</b>\n\n"
+        "• <b>Память:</b> ассистент помнит ваши сообщения в текущем диалоге, пока вы не нажмёте «♻️ Начать заново» \n"
+        f"• <b>Начало диалога:</b> {started_at}\n\n"
+        "Напишите, что вас волнует — я отвечу, дам совет и предложу подходящие места Писания и молитвы."
+    )
+
     await message.answer(
-        "🤖 Напишите, что вас волнует. Я отвечу и предложу подходящие места Писания.",
-        reply_markup=_conversation_keyboard()
+        intro_text,
+        reply_markup=_conversation_keyboard(),
+        parse_mode="HTML"
     )
 
 
@@ -160,6 +177,20 @@ async def chat_message(message: Message, state: FSMContext):
     )
 
     messages = [{"role": "system", "content": system_prompt}] + history
+
+    # Квоты/лимиты: проверяем и фиксируем использование
+    can_use, ai_type = await ai_quota_manager.check_and_increment_usage(user_id)
+    if not can_use:
+        quota_info = await ai_quota_manager.get_user_quota_info(user_id)
+        await message.answer(
+            (
+                "❌ Дневной лимит ИИ исчерпан\n\n"
+                f"📊 Использовано: {quota_info['used_today']}/{quota_info['daily_limit']}\n"
+                f"⏰ Новые запросы через: {quota_info['hours_until_reset']} ч.\n\n"
+                "💡 Попробуйте позже или используйте другие разделы бота."
+            )
+        )
+        return
 
     reply = await ask_gpt_chat(messages)
 

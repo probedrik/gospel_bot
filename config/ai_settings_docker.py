@@ -5,7 +5,7 @@ ENABLE_GPT_EXPLAIN = True  # Включить/отключить кнопку и
 
 # === ОБЫЧНЫЙ ИИ (бесплатные лимиты) ===
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
-OPENROUTER_MODEL = "mistralai/mistral-small-3.1-24b-instruct:free"
+OPENROUTER_MODEL = "google/gemini-2.5-flash-lite"
 
 # Роль для обычного ИИ
 LLM_ROLE = (
@@ -60,7 +60,7 @@ AI_PREMIUM_MAX_CHARS = 8000
 AI_OWNER_ID = 2040516595  # ID владельца, всегда безлимит
 # Множество ID с безлимитным доступом (можно редактировать)
 AI_UNLIMITED_USERS = {AI_OWNER_ID}
-AI_DAILY_LIMIT = 3  # Лимит ИИ-запросов в сутки на пользователя
+AI_DAILY_LIMIT = 5  # Лимит ИИ-запросов в сутки на пользователя
 
 # Пользователи с бесплатным доступом к премиум ИИ (можно редактировать через админ панель)
 AI_FREE_PREMIUM_USERS = set()  # Пример: {123456789, 987654321}
@@ -76,8 +76,8 @@ PREMIUM_AI_PACKAGE_PRICE = 100  # 100₽ за 50 запросов
 PREMIUM_AI_PACKAGE_REQUESTS = 30
 
 # Константы для совместимости с handlers/settings.py
-PREMIUM_PRICE_50 = 100   # Цена за 50 запросов в рублях
 PREMIUM_REQUESTS_50 = 30  # Количество премиум запросов в пакете
+PREMIUM_PRICE_50 = 100   # Цена за 50 запросов в рублях
 
 # Включить подробное логирование ответов OpenRouter API (для отладки)
 LOG_OPENROUTER_RESPONSE = False
@@ -96,7 +96,7 @@ RESPONSE_LENGTH_FULL = "full"    # Полный
 STAR_PREMIUM_PACKAGES = {
     "10": {
         "requests": 10,
-        "cost_stars": 25, 
+        "cost_stars": 25,
         "description": "Базовый пакет"
     },
     "25": {

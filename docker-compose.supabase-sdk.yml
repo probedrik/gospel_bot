@@ -1,6 +1,6 @@
 services:
   bible-bot:
-    image: probedrik/gospel-bot:v2.8.14
+    image: probedrik/gospel-bot:v0.9.1
     container_name: bible-bot-supabase
     restart: unless-stopped
     volumes:
@@ -12,6 +12,23 @@ services:
       - TZ=Europe/Moscow
       # Принудительно устанавливаем использование Supabase
       - USE_SUPABASE=true
+    networks:
+      - gospel-network
+
+  gospel-backend:
+    image: probedrik/gospel-bot:v0.9.1
+    container_name: gospel-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - USE_SUPABASE=true
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
     networks:
       - gospel-network
 
