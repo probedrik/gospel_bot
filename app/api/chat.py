@@ -9,6 +9,8 @@ from handlers.ai_assistant import parse_ai_response
 
 
 router = APIRouter(prefix="/api/v1/ai/chat", tags=["ai-chat"])
+# Совместимость с простыми путями: /api/conversations*
+router_compat = APIRouter(prefix="/api", tags=["ai-chat"])
 
 
 def _system_prompt() -> str:
@@ -129,3 +131,52 @@ async def chat_message(req: ChatMessageRequest):
 async def chat_history(conversation_id: str, limit: int = 20):
     items = await db.list_messages(conversation_id, limit=limit)
     return {"conversation_id": conversation_id, "messages": items}
+
+
+# ===== Совместимые эндпоинты =====
+@router_compat.post("/conversations")
+async def compat_create_conversation(req: StartRequest):
+    conv = await start_chat(req)
+    return conv
+
+
+@router_compat.get("/conversations/{conversation_id}")
+async def compat_get_conversation(conversation_id: str, limit: int = 20):
+    return await chat_history(conversation_id, limit)
+
+
+class CompatMessage(BaseModel):
+    user_id: int
+    message: str
+
+
+@router_compat.post("/conversations/{conversation_id}/messages")
+async def compat_post_message(conversation_id: str, payload: CompatMessage):
+    resp = await chat_message(ChatMessageRequest(
+        user_id=payload.user_id,
+        conversation_id=conversation_id,
+        message=payload.message,
+    ))
+    return resp
+
+
+class ResetRequest(BaseModel):
+    user_id: int
+    conversation_id: str
+
+
+@router.post("/reset")
+async def reset_chat(req: ResetRequest):
+    try:
+        await db.delete_conversation(req.conversation_id, req.user_id)
+    except Exception:
+        pass
+    # создаём новую беседу
+    conv_id = await db.create_conversation(req.user_id, title="Беседа")
+    info = await ai_quota_manager.get_user_quota_info(req.user_id)
+    return {"conversation_id": conv_id, "limits": info}
+
+
+@router_compat.post("/conversations/{conversation_id}/reset")
+async def compat_reset_conversation(conversation_id: str, user_id: int):
+    return await reset_chat(ResetRequest(user_id=user_id, conversation_id=conversation_id))
