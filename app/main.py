@@ -13,6 +13,7 @@ from app.api.bookmarks import router as bookmarks_router
 from app.api.plans import router as plans_router
 from app.api.topics import router as topics_router
 from app.api.local_bible import router as local_bible_router
+from app.api.payments import router as payments_router
 
 
 def create_app() -> FastAPI:
@@ -76,6 +77,7 @@ def create_app() -> FastAPI:
     app.include_router(plans_router)
     app.include_router(topics_router)
     app.include_router(local_bible_router)
+    app.include_router(payments_router)
 
     return app
 

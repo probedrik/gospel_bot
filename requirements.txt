@@ -11,3 +11,4 @@ aiohttp>=3.8.0
 yoomoney
 fastapi
 uvicorn
+requests>=2.31.0
